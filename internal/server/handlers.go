@@ -239,6 +239,13 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	s.jsonOK(w, map[string]string{"logs": logs})
 }
 
+// projectSkipDirs are directory names excluded from project listings and picks.
+var projectSkipDirs = map[string]bool{
+	".git": true, "node_modules": true, "dist": true, "build": true,
+	"target": true, ".venv": true, "venv": true, "__pycache__": true,
+	".next": true, "vendor": true,
+}
+
 // handleListProjects lists directories in projects and tmp-podmans folders
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	type ProjectItem struct {
@@ -252,12 +259,6 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	// Cap recursive listing so the picker stays usable on large project trees
 	const maxProjectItems = 500
-
-	skipDirs := map[string]bool{
-		".git": true, "node_modules": true, "dist": true, "build": true,
-		"target": true, ".venv": true, "venv": true, "__pycache__": true,
-		".next": true, "vendor": true,
-	}
 
 	scanDir := func(basePath, dirType string) {
 		if basePath == "" {
@@ -276,7 +277,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 				if len(results) >= maxProjectItems {
 					return
 				}
-				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || projectSkipDirs[e.Name()] {
 					continue
 				}
 				info, _ := e.Info()
@@ -312,6 +313,83 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleBrowseProjects returns the immediate child folders of a directory for
+// the web UI folder picker. Paths are restricted to the configured projects
+// and scratch (tmp-podmans) roots.
+func (s *Server) handleBrowseProjects(w http.ResponseWriter, r *http.Request) {
+	projectsRoot, _ := filepath.Abs(s.cfg.Directories.Projects)
+	tmpRoot, _ := filepath.Abs(s.cfg.Directories.TmpPodmans)
+
+	within := func(root, p string) bool {
+		return root != "" && (p == root || strings.HasPrefix(p, root+string(filepath.Separator)))
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("path"))
+	if q == "" {
+		q = projectsRoot
+	}
+	abs, err := filepath.Abs(q)
+	if err != nil {
+		s.jsonError(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	abs = filepath.Clean(abs)
+
+	if !within(projectsRoot, abs) && !within(tmpRoot, abs) {
+		s.jsonError(w, "path must be inside the projects or scratch directory", http.StatusBadRequest)
+		return
+	}
+
+	rootType := "projects"
+	if within(tmpRoot, abs) {
+		rootType = "tmp"
+	}
+
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		s.jsonError(w, fmt.Sprintf("Cannot read directory: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	type browseItem struct {
+		Name     string `json:"name"`
+		Path     string `json:"path"`
+		Type     string `json:"type"`
+		Modified string `json:"modified"`
+	}
+	items := []browseItem{}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || projectSkipDirs[e.Name()] {
+			continue
+		}
+		info, _ := e.Info()
+		modTime := ""
+		if info != nil {
+			modTime = info.ModTime().Format("2006-01-02 15:04:05")
+		}
+		items = append(items, browseItem{
+			Name:     e.Name(),
+			Path:     filepath.Join(abs, e.Name()),
+			Type:     rootType,
+			Modified: modTime,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+
+	// Parent for breadcrumb navigation (empty when at a root)
+	parent := ""
+	if dir := filepath.Dir(abs); within(projectsRoot, dir) || within(tmpRoot, dir) {
+		parent = dir
+	}
+
+	s.jsonOK(w, map[string]interface{}{
+		"path":   abs,
+		"parent": parent,
+		"root":   rootType,
+		"items":  items,
+	})
+}
+
 // handleCloneProject duplicates a directory to a new folder in projects or tmp
 func (s *Server) handleCloneProject(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -341,6 +419,16 @@ func (s *Server) handleCloneProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetDir := filepath.Join(targetBase, req.TargetName)
+
+	// Reject overlapping source/target (e.g. cloning a folder into itself)
+	srcAbs, _ := filepath.Abs(req.SourcePath)
+	tgtAbs, _ := filepath.Abs(targetDir)
+	sep := string(filepath.Separator)
+	if tgtAbs == srcAbs || strings.HasPrefix(tgtAbs, srcAbs+sep) || strings.HasPrefix(srcAbs, tgtAbs+sep) {
+		s.jsonError(w, "source and target must not overlap", http.StatusBadRequest)
+		return
+	}
+
 	if err := copyDirectory(req.SourcePath, targetDir); err != nil {
 		s.jsonError(w, fmt.Sprintf("Failed to clone directory: %v", err), http.StatusInternalServerError)
 		return

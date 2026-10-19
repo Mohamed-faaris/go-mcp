@@ -49,6 +49,7 @@ func (s *Server) registerRoutes() {
 
 	// Projects / Directories
 	s.mux.HandleFunc("GET /api/projects", s.withAuth(s.handleListProjects, "viewer"))
+	s.mux.HandleFunc("GET /api/projects/browse", s.withAuth(s.handleBrowseProjects, "viewer"))
 	s.mux.HandleFunc("POST /api/projects/clone", s.withAuth(s.handleCloneProject, "admin"))
 
 	// Images

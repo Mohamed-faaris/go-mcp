@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, ArrowLeft, Cpu, HardDrive, Check, Sparkles, Folder, Plus, Trash2, Camera, ShieldAlert } from 'lucide-react';
 import { apiRequest } from '../api';
+import { FolderPicker } from '../components/FolderPicker';
 import { MCPToolSpec, PublicConfig, ProjectsResponse, HostDevice } from '../types';
 
 export const NewContainerPage: React.FC = () => {
@@ -18,6 +19,13 @@ export const NewContainerPage: React.FC = () => {
   const [cloneEnabled, setCloneEnabled] = useState(false);
   const [cloneLocation, setCloneLocation] = useState<'tmp' | 'projects'>('tmp');
   const [cloneName, setCloneName] = useState('');
+
+  // Optional clone source for the ephemeral scratch folder
+  const [scratchClone, setScratchClone] = useState(false);
+  const [scratchCloneSource, setScratchCloneSource] = useState('');
+
+  // Which flow the shared folder picker is open for
+  const [pickerOpenFor, setPickerOpenFor] = useState<'link' | 'scratch' | null>(null);
 
   // Resources
   const [memoryLimit, setMemoryLimit] = useState('2g');
@@ -116,10 +124,26 @@ export const NewContainerPage: React.FC = () => {
     ? `${selectedProject.split('/').filter(Boolean).pop() || 'project'}-sandbox`
     : 'project-sandbox';
 
+  const handlePickFolder = (p: string) => {
+    if (pickerOpenFor === 'link') {
+      setSelectedProject(p);
+      setCloneName('');
+    } else if (pickerOpenFor === 'scratch') {
+      setScratchCloneSource(p);
+    }
+    setPickerOpenFor(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    if (mountMode === 'project' && !selectedProject) {
+      setError('Choose a host folder to link, or switch to a scratch folder / no mount');
+      setLoading(false);
+      return;
+    }
 
     let projectDir = '';
     if (mountMode === 'project') {
@@ -144,9 +168,34 @@ export const NewContainerPage: React.FC = () => {
         }
       }
     } else if (mountMode === 'tmp') {
+      const safeName = tmpDirName.trim().replace(/[^\w.-]+/g, '-') || `scratch-${Math.floor(1000 + Math.random() * 9000)}`;
       projectDir = config?.directories.tmp_podmans
-        ? `${config.directories.tmp_podmans}/${tmpDirName}`
-        : `/host/tmp-podmans/${tmpDirName}`;
+        ? `${config.directories.tmp_podmans}/${safeName}`
+        : `/host/tmp-podmans/${safeName}`;
+
+      // Optionally seed the scratch folder with a copy of an existing folder
+      if (scratchClone) {
+        if (!scratchCloneSource) {
+          setError('Choose a folder to clone into the scratch directory');
+          setLoading(false);
+          return;
+        }
+        try {
+          const cloned = await apiRequest<{ targetPath: string }>('/api/projects/clone', {
+            method: 'POST',
+            body: JSON.stringify({
+              sourcePath: scratchCloneSource,
+              targetName: safeName,
+              location: 'tmp',
+            }),
+          });
+          projectDir = cloned.targetPath;
+        } catch (err: any) {
+          setError(err.message || 'Failed to clone folder into scratch');
+          setLoading(false);
+          return;
+        }
+      }
     }
 
     const payload = {
@@ -346,32 +395,30 @@ export const NewContainerPage: React.FC = () => {
 
             {mountMode === 'project' && (
               <div className="pl-6 pt-2 space-y-3">
-                {projects?.items && projects.items.length > 0 ? (
-                  <select
-                    value={selectedProject}
-                    onChange={(e) => {
-                      setSelectedProject(e.target.value);
-                      setCloneName('');
-                    }}
-                    className="w-full max-w-xl px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpenFor('link')}
+                    className="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition max-w-xl"
                   >
-                    {projects.items.map((item) => (
-                      <option key={item.path} value={item.path}>
-                        {item.type === 'tmp' ? 'scratch: ' : ''}
-                        {item.name} ({item.path})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <p className="text-xs text-slate-400">
-                    No folders found in host projects directory. You can create a scratch directory below.
-                  </p>
-                )}
-                {projects?.projectsDir && (
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    Browsing: {projects.projectsDir} (subfolders included)
-                  </p>
-                )}
+                    <Folder className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span className="truncate font-mono">{selectedProject || 'Choose folder…'}</span>
+                  </button>
+                  {selectedProject && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProject('')}
+                      className="text-xs text-slate-500 hover:text-rose-400 transition"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  File picker rooted at{' '}
+                  <span className="font-mono">{projects?.projectsDir ?? '~/Projects'}</span> —
+                  browse into any subfolder and select it.
+                </p>
 
                 {/* Clone instead of link */}
                 {selectedProject && (
@@ -458,14 +505,69 @@ export const NewContainerPage: React.FC = () => {
             </label>
 
             {mountMode === 'tmp' && (
-              <div className="pl-6 pt-2">
-                <input
-                  type="text"
-                  value={tmpDirName}
-                  onChange={(e) => setTmpDirName(e.target.value)}
-                  placeholder="scratch-folder-name"
-                  className="w-full max-w-md px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                />
+              <div className="pl-6 pt-2 space-y-3">
+                <div className="max-w-md">
+                  <input
+                    type="text"
+                    value={tmpDirName}
+                    onChange={(e) => setTmpDirName(e.target.value)}
+                    placeholder="scratch-folder-name"
+                    className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                    {config?.directories.tmp_podmans ?? '~/tmp-podmans'}/
+                    {tmpDirName.trim().replace(/[^\w.-]+/g, '-') || 'scratch'}
+                  </p>
+                </div>
+
+                {projects?.items && projects.items.length > 0 && (
+                  <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/40 border border-slate-800 cursor-pointer max-w-xl">
+                    <input
+                      type="checkbox"
+                      checked={scratchClone}
+                      onChange={(e) => setScratchClone(e.target.checked)}
+                      className="mt-0.5 rounded text-amber-500 focus:ring-amber-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-slate-200">
+                        Clone an existing folder into scratch
+                      </span>
+                      <p className="text-xs text-slate-400">
+                        Seed the new scratch folder with a copy of a chosen host folder — the
+                        sandbox works on the copy, your original stays untouched.
+                      </p>
+                    </div>
+                  </label>
+                )}
+
+                {scratchClone && (
+                  <div className="pl-6 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setPickerOpenFor('scratch')}
+                        className="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition max-w-xl"
+                      >
+                        <Folder className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <span className="truncate font-mono">
+                          {scratchCloneSource || 'Choose folder to copy…'}
+                        </span>
+                      </button>
+                      {scratchCloneSource && (
+                        <button
+                          type="button"
+                          onClick={() => setScratchCloneSource('')}
+                          className="text-xs text-slate-500 hover:text-rose-400 transition"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      The copy — not the original — is mounted at /workspace.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -763,6 +865,23 @@ export const NewContainerPage: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Shared folder picker for link & scratch-clone flows */}
+      <FolderPicker
+        isOpen={pickerOpenFor !== null}
+        onClose={() => setPickerOpenFor(null)}
+        onSelect={handlePickFolder}
+        projectsDir={projects?.projectsDir ?? '/home/mfk01/Projects'}
+        tmpDir={projects?.tmpDir ?? '/home/mfk01/tmp-podmans'}
+        startPath={
+          pickerOpenFor === 'link' && selectedProject
+            ? selectedProject
+            : pickerOpenFor === 'scratch' && scratchCloneSource
+              ? scratchCloneSource
+              : undefined
+        }
+        title={pickerOpenFor === 'scratch' ? 'Pick a Folder to Clone' : 'Pick a Host Folder'}
+      />
     </div>
   );
 };
