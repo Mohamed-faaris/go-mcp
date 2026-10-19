@@ -28,6 +28,9 @@ Thumbs.db
 logs/
 *.log
 
+# Runtime data (MCP registry store)
+data/
+
 # Test coverage
 coverage.out
 coverage.html

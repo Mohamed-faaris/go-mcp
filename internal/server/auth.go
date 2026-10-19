@@ -81,3 +81,10 @@ func getUserRole(ctx context.Context) string {
 	}
 	return "viewer"
 }
+
+func getUserName(ctx context.Context) string {
+	if u, ok := ctx.Value(usernameContextKey).(string); ok {
+		return u
+	}
+	return ""
+}

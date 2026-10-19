@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Box, ArrowLeft, Cpu, HardDrive, Check, Sparkles, Folder, Plus, Trash2, Camera, ShieldAlert } from 'lucide-react';
+import { Box, ArrowLeft, Cpu, HardDrive, Check, Sparkles, Folder, Plus, Trash2, Camera, ShieldAlert, Puzzle } from 'lucide-react';
 import { apiRequest } from '../api';
 import { FolderPicker } from '../components/FolderPicker';
-import { MCPToolSpec, PublicConfig, ProjectsResponse, HostDevice } from '../types';
+import { MCPToolSpec, MCPRegistryTool, MCPToolsResponse, PublicConfig, ProjectsResponse, HostDevice } from '../types';
+
+const BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  'desktop-commander': 'File management, system process control, shell execution',
+  playwright: 'Automated browser navigation, page interactions, screenshot capture',
+  'ubuntu-gui': 'X11/Wayland desktop automation, mouse click, keyboard typing',
+};
 
 export const NewContainerPage: React.FC = () => {
   const [name, setName] = useState(`gomcp-agent-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -49,6 +55,7 @@ export const NewContainerPage: React.FC = () => {
   // Projects list & config
   const [projects, setProjects] = useState<ProjectsResponse | null>(null);
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [registryTools, setRegistryTools] = useState<MCPRegistryTool[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,20 +89,19 @@ export const NewContainerPage: React.FC = () => {
         setAvailableDevices(devs || []);
       })
       .catch(() => {});
+
+    // Fetch MCP tool registry (MCP Access Center)
+    apiRequest<MCPToolsResponse>('/api/mcp-tools')
+      .then((res) => setRegistryTools(res.tools || []))
+      .catch(() => {});
   }, []);
 
-  const handleToggleTool = (toolName: string) => {
-    const exists = mcpTools.some((t) => t.name === toolName);
+  const handleToggleTool = (tool: MCPRegistryTool) => {
+    const exists = mcpTools.some((t) => t.name === tool.name);
     if (exists) {
-      setMcpTools(mcpTools.filter((t) => t.name !== toolName));
+      setMcpTools(mcpTools.filter((t) => t.name !== tool.name));
     } else {
-      // Find tool in default config if available
-      const defTool = config?.defaults.mcp_tools?.find((t) => t.name === toolName);
-      if (defTool) {
-        setMcpTools([...mcpTools, defTool]);
-      } else {
-        setMcpTools([...mcpTools, { name: toolName, command: 'npx', args: ['-y', `@anthropic/${toolName}-mcp`] }]);
-      }
+      setMcpTools([...mcpTools, { name: tool.name, command: tool.command, args: tool.args }]);
     }
   };
 
@@ -650,34 +656,35 @@ export const NewContainerPage: React.FC = () => {
 
         {/* Step 5: Bundled MCP Tools */}
         <div className="bg-[#111827]/90 border border-slate-800 rounded-2xl p-6">
-          <h2 className="text-base font-semibold text-slate-200 mb-4 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-blue-400" />
-            <span>5. Bundled MCP Server Tools</span>
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-400" />
+              <span>5. Bundled MCP Server Tools</span>
+            </h2>
+            <a
+              href="#/mcp-center"
+              className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition"
+            >
+              <Puzzle className="w-3.5 h-3.5" />
+              Manage in MCP Access Center
+            </a>
+          </div>
 
           <div className="space-y-3 mb-6">
-            {[
-              {
-                name: 'desktop-commander',
-                title: 'Desktop Commander MCP',
-                desc: 'File management, system process control, shell execution',
-              },
-              {
-                name: 'playwright',
-                title: 'Playwright MCP',
-                desc: 'Automated browser navigation, page interactions, screenshot capture',
-              },
-              {
-                name: 'ubuntu-gui',
-                title: 'Ubuntu GUI MCP',
-                desc: 'X11/Wayland desktop automation, mouse click, keyboard typing',
-              },
-            ].map((t) => {
+            {registryTools.length === 0 && (
+              <p className="text-xs text-slate-500">
+                No MCP tools registered yet — add custom tools below, or register shared ones in the MCP Access Center.
+              </p>
+            )}
+            {registryTools.map((t) => {
               const active = mcpTools.some((x) => x.name === t.name);
+              const desc =
+                t.description ||
+                (BUILTIN_DESCRIPTIONS[t.name] ?? '');
               return (
                 <div
-                  key={t.name}
-                  onClick={() => handleToggleTool(t.name)}
+                  key={t.id}
+                  onClick={() => handleToggleTool(t)}
                   className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer transition ${
                     active
                       ? 'bg-blue-600/10 border-blue-500/50 shadow-sm'
@@ -690,9 +697,23 @@ export const NewContainerPage: React.FC = () => {
                     onChange={() => {}}
                     className="mt-0.5 rounded text-blue-500 focus:ring-blue-500"
                   />
-                  <div className="flex-1">
-                    <span className="text-sm font-semibold text-slate-200">{t.title}</span>
-                    <p className="text-xs text-slate-400">{t.desc}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-200">{t.name}</span>
+                      <span
+                        className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${
+                          t.level === 'admin'
+                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        }`}
+                      >
+                        {t.level}
+                      </span>
+                    </div>
+                    {desc && <p className="text-xs text-slate-400 mt-0.5">{desc}</p>}
+                    <p className="text-[11px] font-mono text-slate-500 mt-0.5 truncate">
+                      {t.command} {t.args.join(' ')}
+                    </p>
                   </div>
                 </div>
               );

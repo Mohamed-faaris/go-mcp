@@ -7,6 +7,7 @@ import { ContainerDetailPage } from './pages/ContainerDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ImagesPage } from './pages/ImagesPage';
 import { DevicesPage } from './pages/DevicesPage';
+import { MCPAccessCenterPage } from './pages/MCPAccessCenterPage';
 import { getStoredAuth, setStoredAuth, apiRequest } from './api';
 import { AuthUser } from './types';
 
@@ -86,6 +87,9 @@ export const App: React.FC = () => {
     if (currentRoute.startsWith('#/containers/')) {
       const containerId = currentRoute.replace('#/containers/', '');
       return <ContainerDetailPage containerId={containerId} user={user} />;
+    }
+    if (currentRoute.startsWith('#/mcp-center')) {
+      return <MCPAccessCenterPage user={user} />;
     }
     if (currentRoute.startsWith('#/projects')) {
       return <ProjectsPage user={user} />;

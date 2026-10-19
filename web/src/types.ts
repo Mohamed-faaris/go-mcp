@@ -55,6 +55,22 @@ export interface MCPToolSpec {
   args: string[];
 }
 
+export interface MCPRegistryTool {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  level: 'admin' | 'user';
+  description: string;
+  builtIn: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface MCPToolsResponse {
+  tools: MCPRegistryTool[];
+}
+
 export interface CreateContainerRequest {
   name: string;
   image: string;

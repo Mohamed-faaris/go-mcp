@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, FolderGit2, Layers, HardDrive, Plus, LogOut, Terminal, Shield, Eye } from 'lucide-react';
+import { Box, FolderGit2, Layers, HardDrive, Plus, LogOut, Terminal, Shield, Eye, Puzzle } from 'lucide-react';
 import { AuthUser } from '../types';
 
 interface NavbarProps {
@@ -11,6 +11,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentRoute, user, onLogout }) => {
   const navItems = [
     { label: 'Sandboxes', route: '#/', icon: Box },
+    { label: 'MCP Center', route: '#/mcp-center', icon: Puzzle },
     { label: 'Projects', route: '#/projects', icon: FolderGit2 },
     { label: 'Images', route: '#/images', icon: Layers },
     { label: 'Host Devices', route: '#/devices', icon: HardDrive },

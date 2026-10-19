@@ -11,19 +11,21 @@ import (
 
 // Server coordinates HTTP routing, authorization, and Podman services.
 type Server struct {
-	cfg    *webconfig.Config
-	podman *podman.Client
-	log    *logger.Logger
-	mux    *http.ServeMux
+	cfg      *webconfig.Config
+	podman   *podman.Client
+	log      *logger.Logger
+	registry *mcpRegistry
+	mux      *http.ServeMux
 }
 
 // New creates and configures a new Server instance.
 func New(cfg *webconfig.Config, pc *podman.Client, log *logger.Logger) *Server {
 	s := &Server{
-		cfg:    cfg,
-		podman: pc,
-		log:    log,
-		mux:    http.NewServeMux(),
+		cfg:      cfg,
+		podman:   pc,
+		log:      log,
+		registry: loadMCPRegistry(cfg),
+		mux:      http.NewServeMux(),
 	}
 	s.registerRoutes()
 	return s
@@ -51,6 +53,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/projects", s.withAuth(s.handleListProjects, "viewer"))
 	s.mux.HandleFunc("GET /api/projects/browse", s.withAuth(s.handleBrowseProjects, "viewer"))
 	s.mux.HandleFunc("POST /api/projects/clone", s.withAuth(s.handleCloneProject, "admin"))
+
+	// MCP Access Center (tool registry with admin/user levels)
+	s.mux.HandleFunc("GET /api/mcp-tools", s.withAuth(s.handleListMCPTools, "viewer"))
+	s.mux.HandleFunc("POST /api/mcp-tools", s.withAuth(s.handleCreateMCPTool, "viewer"))
+	s.mux.HandleFunc("PUT /api/mcp-tools/{id}", s.withAuth(s.handleUpdateMCPTool, "viewer"))
+	s.mux.HandleFunc("DELETE /api/mcp-tools/{id}", s.withAuth(s.handleDeleteMCPTool, "viewer"))
 
 	// Images
 	s.mux.HandleFunc("GET /api/images", s.withAuth(s.handleListImages, "viewer"))
