@@ -1,0 +1,24 @@
+# Environment and secrets
+.env
+
+# Binary output
+/go-mcp
+/bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+coverage.out
+coverage.html

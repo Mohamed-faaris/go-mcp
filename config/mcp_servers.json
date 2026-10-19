@@ -1,0 +1,22 @@
+{
+  "servers": [
+    {
+      "name": "desktop-commander",
+      "command": "npx",
+      "args": ["-y", "@anthropic/desktop-commander-mcp"],
+      "description": "Terminal commands, file operations, process management"
+    },
+    {
+      "name": "playwright",
+      "command": "npx",
+      "args": ["-y", "@anthropic/playwright-mcp"],
+      "description": "Browser navigation, clicking, forms, page inspection"
+    },
+    {
+      "name": "ubuntu-gui",
+      "command": "npx",
+      "args": ["-y", "@anthropic/ubuntu-gui-mcp"],
+      "description": "Screenshots, mouse, keyboard, desktop interaction"
+    }
+  ]
+}
