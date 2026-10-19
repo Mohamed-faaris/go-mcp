@@ -3,7 +3,16 @@
 
 # Binary output
 /go-mcp
+/go-mcp-server
 /bin/
+
+# Web frontend
+web/node_modules/
+web/dist/
+
+# Package artifacts
+*.deb
+
 
 # IDE
 .vscode/

@@ -1,0 +1,46 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+auth:
+  mode: "basic" # "none", "basic"
+  admin:
+    username: "admin"
+    password: "${ADMIN_PASSWORD:-admin123}"
+  viewer:
+    username: "viewer"
+    password: "${VIEWER_PASSWORD:-viewer123}"
+
+podman:
+  socket: "${PODMAN_SOCKET:-/run/podman/podman.sock}"
+  network: "go-mcp-net"
+
+directories:
+  projects: "${PROJECTS_DIR:-/host/projects}"
+  tmp_podmans: "${TMP_PODMANS_DIR:-/host/tmp-podmans}"
+
+defaults:
+  base_image: "ubuntu:24.04"
+  resource_limits:
+    memory: "2g"
+    cpus: "2"
+  mcp_tools:
+    - name: "desktop-commander"
+      command: "npx"
+      args: ["-y", "@anthropic/desktop-commander-mcp"]
+    - name: "playwright"
+      command: "npx"
+      args: ["-y", "@anthropic/playwright-mcp"]
+    - name: "ubuntu-gui"
+      command: "npx"
+      args: ["-y", "@anthropic/ubuntu-gui-mcp"]
+
+images:
+  - name: "Ubuntu 24.04 (LTS)"
+    image: "docker.io/library/ubuntu:24.04"
+  - name: "Node.js 20 (Bookworm)"
+    image: "docker.io/library/node:20-bookworm"
+  - name: "Python 3.12 (Bookworm)"
+    image: "docker.io/library/python:3.12-bookworm"
+  - name: "Alpine Linux"
+    image: "docker.io/library/alpine:latest"

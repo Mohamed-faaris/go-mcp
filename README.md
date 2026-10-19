@@ -131,14 +131,43 @@ go run ./cmd/go-mcp "your task here"
 - Shell execution can be disabled with `ALLOW_SHELL=false`
 - Set `APPROVAL_MODE=all` until you trust the agent's behavior
 
+## Web UI & Podman Sandbox Manager
+
+`go-mcp-server` provides a web interface to spin up, monitor, and interact with isolated Ubuntu sandbox containers running Podman:
+
+- **Dashboard**: Live container metrics, states, and project mount tracking.
+- **Interactive Shell**: Low-latency browser terminal powered by `xterm.js` and WebSockets.
+- **Host Hardware Pass-Through**: Direct V4L2 device pass-through (`/dev/videoX`) for Econ Systems cameras (e.g. See3CAM_24CUG) and USB webcams.
+- **Container Lifecycle**: Spin up, duplicate/clone, start, stop, and destroy sandboxes.
+- **Projects & Scratch**: Bind-mount host project directories into `/workspace`.
+
+### Building and Running the Web UI
+
+```bash
+# 1. Build frontend (in web/)
+cd web
+bun install # or npm install
+bun run build # outputs to web/dist
+cd ..
+
+# 2. Build and run server
+go build -o go-mcp-server ./cmd/go-mcp-server
+./go-mcp-server --config config/web_config.yaml
+```
+
+Access the UI at `http://localhost:8080`. Default login credentials:
+- **Admin**: `admin` / `admin123`
+- **Viewer**: `viewer` / `viewer123`
+
 ## Roadmap
 
-- [ ] Phase 1 ✅ Configuration and MCP connectivity
-- [ ] Phase 2 ✅ LLM tool-calling loop
-- [ ] Phase 3 ✅ GUI and vision support
-- [ ] Phase 4 ✅ Permissions and reliability
-- [ ] Phase 5: Task planning and recovery
-- [ ] Phase 6: Web UI dashboard
+- [x] Phase 1: Configuration and MCP connectivity
+- [x] Phase 2: LLM tool-calling loop
+- [x] Phase 3: GUI and vision support
+- [x] Phase 4: Permissions and reliability
+- [x] Phase 5: Task planning and recovery
+- [x] Phase 6: Web UI dashboard & Podman sandboxing
+- [x] Phase 7: Hardware & V4L2 camera pass-through
 
 ## License
 
