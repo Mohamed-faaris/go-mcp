@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -249,33 +250,60 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	var results []ProjectItem
 
+	// Cap recursive listing so the picker stays usable on large project trees
+	const maxProjectItems = 500
+
+	skipDirs := map[string]bool{
+		".git": true, "node_modules": true, "dist": true, "build": true,
+		"target": true, ".venv": true, "venv": true, "__pycache__": true,
+		".next": true, "vendor": true,
+	}
+
 	scanDir := func(basePath, dirType string) {
 		if basePath == "" {
 			return
 		}
-		entries, err := os.ReadDir(basePath)
-		if err != nil {
-			return
-		}
-		for _, e := range entries {
-			if e.IsDir() {
+		var walk func(dir string, depth int)
+		walk = func(dir string, depth int) {
+			if len(results) >= maxProjectItems {
+				return
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return
+			}
+			for _, e := range entries {
+				if len(results) >= maxProjectItems {
+					return
+				}
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+					continue
+				}
 				info, _ := e.Info()
 				modTime := ""
 				if info != nil {
 					modTime = info.ModTime().Format("2006-01-02 15:04:05")
 				}
+				fullPath := filepath.Join(dir, e.Name())
 				results = append(results, ProjectItem{
 					Name:     e.Name(),
-					Path:     filepath.Join(basePath, e.Name()),
+					Path:     fullPath,
 					Type:     dirType,
 					Modified: modTime,
 				})
+				// Recurse so any nested folder can be chosen (bounded depth)
+				if depth < 4 {
+					walk(fullPath, depth+1)
+				}
 			}
 		}
+		walk(basePath, 0)
 	}
 
 	scanDir(s.cfg.Directories.Projects, "project")
 	scanDir(s.cfg.Directories.TmpPodmans, "tmp")
+
+	sort.Slice(results, func(i, j int) bool { return results[i].Path < results[j].Path })
 
 	s.jsonOK(w, map[string]interface{}{
 		"projectsDir": s.cfg.Directories.Projects,
@@ -299,6 +327,11 @@ func (s *Server) handleCloneProject(w http.ResponseWriter, r *http.Request) {
 
 	if req.SourcePath == "" || req.TargetName == "" {
 		s.jsonError(w, "sourcePath and targetName are required", http.StatusBadRequest)
+		return
+	}
+	// Target name must be a plain folder name — no separators or traversal
+	if filepath.Base(req.TargetName) != req.TargetName || strings.Contains(req.TargetName, "..") {
+		s.jsonError(w, "targetName must be a plain folder name (no path separators)", http.StatusBadRequest)
 		return
 	}
 
@@ -414,13 +447,41 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	s.jsonOK(w, devices)
 }
 
-// handleGetConfig returns public configuration
+// handleGetConfig returns public configuration (snake_case keys for the web UI)
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	type imageOut struct {
+		Name  string `json:"name"`
+		Image string `json:"image"`
+	}
+	images := make([]imageOut, 0, len(s.cfg.Images))
+	for _, img := range s.cfg.Images {
+		images = append(images, imageOut{Name: img.Name, Image: img.Image})
+	}
+
+	tools := make([]map[string]interface{}, 0, len(s.cfg.Defaults.MCPTools))
+	for _, t := range s.cfg.Defaults.MCPTools {
+		tools = append(tools, map[string]interface{}{
+			"name":    t.Name,
+			"command": t.Command,
+			"args":    t.Args,
+		})
+	}
+
 	s.jsonOK(w, map[string]interface{}{
-		"defaults":    s.cfg.Defaults,
-		"directories": s.cfg.Directories,
-		"images":      s.cfg.Images,
-		"authMode":    s.cfg.Auth.Mode,
+		"defaults": map[string]interface{}{
+			"base_image": s.cfg.Defaults.BaseImage,
+			"resource_limits": map[string]string{
+				"memory": s.cfg.Defaults.Resources.Memory,
+				"cpus":   s.cfg.Defaults.Resources.CPUs,
+			},
+			"mcp_tools": tools,
+		},
+		"directories": map[string]string{
+			"projects":    s.cfg.Directories.Projects,
+			"tmp_podmans": s.cfg.Directories.TmpPodmans,
+		},
+		"images":  images,
+		"authMode": s.cfg.Auth.Mode,
 	})
 }
 
@@ -436,10 +497,25 @@ func copyDirectory(src, dst string) error {
 	for _, entry := range entries {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
+		// Recreate symlinks as-is (e.g. .venv/lib64 -> lib)
+		if entry.Type()&os.ModeSymlink != 0 {
+			linkTarget, err := os.Readlink(srcPath)
+			if err != nil {
+				return err
+			}
+			_ = os.Remove(dstPath)
+			if err := os.Symlink(linkTarget, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
 		if entry.IsDir() {
 			if err := copyDirectory(srcPath, dstPath); err != nil {
 				return err
 			}
+		} else if !entry.Type().IsRegular() {
+			// Skip sockets, devices, fifos, etc.
+			continue
 		} else {
 			in, err := os.Open(srcPath)
 			if err != nil {

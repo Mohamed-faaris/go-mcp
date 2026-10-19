@@ -14,6 +14,11 @@ export const NewContainerPage: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState('');
   const [tmpDirName, setTmpDirName] = useState(`scratch-${Math.floor(1000 + Math.random() * 9000)}`);
 
+  // Clone option for linked host projects
+  const [cloneEnabled, setCloneEnabled] = useState(false);
+  const [cloneLocation, setCloneLocation] = useState<'tmp' | 'projects'>('tmp');
+  const [cloneName, setCloneName] = useState('');
+
   // Resources
   const [memoryLimit, setMemoryLimit] = useState('2g');
   const [cpuLimit, setCpuLimit] = useState('2');
@@ -107,6 +112,10 @@ export const NewContainerPage: React.FC = () => {
     }
   };
 
+  const defaultCloneName = selectedProject
+    ? `${selectedProject.split('/').filter(Boolean).pop() || 'project'}-sandbox`
+    : 'project-sandbox';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -115,6 +124,25 @@ export const NewContainerPage: React.FC = () => {
     let projectDir = '';
     if (mountMode === 'project') {
       projectDir = selectedProject;
+      // Optionally clone the chosen folder first (default: into scratch/tmp)
+      if (cloneEnabled && selectedProject) {
+        const targetName = cloneName.trim() || defaultCloneName;
+        try {
+          const cloned = await apiRequest<{ targetPath: string }>('/api/projects/clone', {
+            method: 'POST',
+            body: JSON.stringify({
+              sourcePath: selectedProject,
+              targetName,
+              location: cloneLocation,
+            }),
+          });
+          projectDir = cloned.targetPath;
+        } catch (err: any) {
+          setError(err.message || 'Failed to clone project folder');
+          setLoading(false);
+          return;
+        }
+      }
     } else if (mountMode === 'tmp') {
       projectDir = config?.directories.tmp_podmans
         ? `${config.directories.tmp_podmans}/${tmpDirName}`
@@ -310,20 +338,26 @@ export const NewContainerPage: React.FC = () => {
               />
               <div className="flex-1">
                 <span className="text-sm font-medium text-slate-200">Link Existing Host Project</span>
-                <p className="text-xs text-slate-400">Bind mount a folder from host projects directory</p>
+                <p className="text-xs text-slate-400">
+                  Choose any folder from the host projects directory — link it directly, or clone it into temporary scratch first
+                </p>
               </div>
             </label>
 
             {mountMode === 'project' && (
-              <div className="pl-6 pt-2">
+              <div className="pl-6 pt-2 space-y-3">
                 {projects?.items && projects.items.length > 0 ? (
                   <select
                     value={selectedProject}
-                    onChange={(e) => setSelectedProject(e.target.value)}
-                    className="w-full max-w-md px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    onChange={(e) => {
+                      setSelectedProject(e.target.value);
+                      setCloneName('');
+                    }}
+                    className="w-full max-w-xl px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   >
                     {projects.items.map((item) => (
                       <option key={item.path} value={item.path}>
+                        {item.type === 'tmp' ? 'scratch: ' : ''}
                         {item.name} ({item.path})
                       </option>
                     ))}
@@ -332,6 +366,79 @@ export const NewContainerPage: React.FC = () => {
                   <p className="text-xs text-slate-400">
                     No folders found in host projects directory. You can create a scratch directory below.
                   </p>
+                )}
+                {projects?.projectsDir && (
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    Browsing: {projects.projectsDir} (subfolders included)
+                  </p>
+                )}
+
+                {/* Clone instead of link */}
+                {selectedProject && (
+                  <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/40 border border-slate-800 cursor-pointer max-w-xl">
+                    <input
+                      type="checkbox"
+                      checked={cloneEnabled}
+                      onChange={(e) => setCloneEnabled(e.target.checked)}
+                      className="mt-0.5 rounded text-amber-500 focus:ring-amber-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-slate-200">Clone folder instead of linking</span>
+                      <p className="text-xs text-slate-400">
+                        Copy the chosen folder first — the sandbox only edits the copy, your original stays untouched.
+                      </p>
+                    </div>
+                  </label>
+                )}
+
+                {cloneEnabled && selectedProject && (
+                  <div className="pl-6 space-y-3 max-w-xl">
+                    <div>
+                      <span className="block text-xs font-medium text-slate-300 mb-1.5">Save clone to</span>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCloneLocation('tmp')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                            cloneLocation === 'tmp'
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Temporary scratch ({projects?.tmpDir ?? 'tmp-podmans'})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCloneLocation('projects')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                            cloneLocation === 'projects'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Host Projects ({projects?.projectsDir ?? 'Projects'})
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-medium text-slate-300 mb-1.5">New folder name</span>
+                      <input
+                        type="text"
+                        value={cloneName}
+                        onChange={(e) => setCloneName(e.target.value)}
+                        placeholder={defaultCloneName}
+                        className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Will be created as{' '}
+                        <span className="font-mono text-amber-400/90">
+                          {cloneLocation === 'tmp' ? projects?.tmpDir ?? '/home/mfk01/tmp-podmans' : projects?.projectsDir ?? '/home/mfk01/Projects'}/
+                          {cloneName.trim() || defaultCloneName}
+                        </span>{' '}
+                        and mounted at /workspace.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

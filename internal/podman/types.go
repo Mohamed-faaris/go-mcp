@@ -1,6 +1,37 @@
 package podman
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// UnixTime unmarshals either an RFC3339 timestamp string or a unix-seconds
+// number (Podman returns different formats across versions/endpoints) and
+// always exposes unix seconds as the JSON number.
+type UnixTime int64
+
+func (t *UnixTime) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(strings.TrimSpace(string(b)), `"`)
+	if s == "" || s == "null" {
+		*t = 0
+		return nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		*t = UnixTime(n)
+		return nil
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		*t = UnixTime(f)
+		return nil
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		*t = UnixTime(ts.Unix())
+		return nil
+	}
+	return fmt.Errorf("podman: cannot parse time %q", s)
+}
 
 // ContainerSummary represents brief container details from Podman list endpoint.
 type ContainerSummary struct {
@@ -9,9 +40,9 @@ type ContainerSummary struct {
 	Image      string            `json:"Image"`
 	State      string            `json:"State"`
 	Status     string            `json:"Status"`
-	Created    int64             `json:"Created"`
+	Created    UnixTime          `json:"Created"`
 	Labels     map[string]string `json:"Labels"`
-	Mounts     []Mount           `json:"Mounts"`
+	Mounts     []string          `json:"Mounts"`
 	ProjectDir string            `json:"projectDir,omitempty"`
 }
 

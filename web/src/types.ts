@@ -19,7 +19,7 @@ export interface ContainerSummary {
   Status: string;
   Created: number;
   Labels?: Record<string, string>;
-  Mounts?: Mount[];
+  Mounts?: string[];
   projectDir?: string;
 }
 
