@@ -104,6 +104,7 @@ func (s *Server) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 		MemoryLimit string               `json:"memoryLimit"`
 		CPULimit    string               `json:"cpuLimit"`
 		AutoStart   bool                 `json:"autoStart"`
+		Env         []string             `json:"env"`
 		MCPTools    []podman.MCPToolSpec `json:"mcpTools"`
 		Devices     []string             `json:"devices"`
 	}
@@ -136,6 +137,7 @@ func (s *Server) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 		ProjectDir:  req.ProjectDir,
 		MemoryLimit: req.MemoryLimit,
 		CPULimit:    req.CPULimit,
+		Env:         req.Env,
 		MCPTools:    req.MCPTools,
 		Devices:     req.Devices,
 	}

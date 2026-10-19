@@ -213,11 +213,18 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 	memBytes := parseMemoryLimit(opts.MemoryLimit)
 	cpuQuota, cpuPeriod := parseCPULimit(opts.CPULimit)
 
-	env := append(opts.Env,
+	envPairs := append(opts.Env,
 		"GOMCP_CONTAINER=true",
 		"WORKSPACE=/workspace",
 		fmt.Sprintf("GOMCP_MCP_SERVERS=%s", string(toolsJSON)),
 	)
+	// Podman's SpecGenerator.env is a map[string]string (KEY -> value), not a slice
+	env := make(map[string]string, len(envPairs))
+	for _, kv := range envPairs {
+		if k, v, ok := strings.Cut(kv, "="); ok && k != "" {
+			env[k] = v
+		}
+	}
 
 	payload := map[string]interface{}{
 		"name":            name,

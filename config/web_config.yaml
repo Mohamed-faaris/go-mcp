@@ -16,8 +16,8 @@ podman:
   network: "go-mcp-net"
 
 directories:
-  projects: "${PROJECTS_DIR:-/host/projects}"
-  tmp_podmans: "${TMP_PODMANS_DIR:-/host/tmp-podmans}"
+  projects: "${PROJECTS_DIR:-~/Projects}"
+  tmp_podmans: "${TMP_PODMANS_DIR:-~/tmp-podmans}"
 
 defaults:
   base_image: "ubuntu:24.04"

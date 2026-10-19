@@ -140,6 +140,20 @@ func Load(path string) (*Config, error) {
 	if cfg.Defaults.BaseImage == "" {
 		cfg.Defaults.BaseImage = "ubuntu:24.04"
 	}
+	// Expand a leading ~ in directory paths to the current user's home dir
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		expandTilde := func(p string) string {
+			if p == "~" {
+				return home
+			}
+			if strings.HasPrefix(p, "~/") {
+				return filepath.Join(home, strings.TrimPrefix(p, "~/"))
+			}
+			return p
+		}
+		cfg.Directories.Projects = expandTilde(cfg.Directories.Projects)
+		cfg.Directories.TmpPodmans = expandTilde(cfg.Directories.TmpPodmans)
+	}
 	if strings.TrimSpace(cfg.Directories.Projects) == "" {
 		cfg.Directories.Projects = "/host/projects"
 	}
