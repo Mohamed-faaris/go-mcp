@@ -144,6 +144,15 @@ func (s *Server) handleCreateContainer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, err := s.podman.CreateContainer(r.Context(), createOpts)
+	// If the image isn't available locally, pull it once and retry
+	if err != nil && strings.Contains(err.Error(), "no such image") {
+		s.log.Info("image missing locally, pulling", map[string]interface{}{"image": req.Image})
+		if pullErr := s.podman.PullImage(r.Context(), req.Image); pullErr != nil {
+			s.jsonError(w, fmt.Sprintf("Image %q is not available locally and pull failed: %v", req.Image, pullErr), http.StatusInternalServerError)
+			return
+		}
+		id, err = s.podman.CreateContainer(r.Context(), createOpts)
+	}
 	if err != nil {
 		s.jsonError(w, fmt.Sprintf("Failed to create container: %v", err), http.StatusInternalServerError)
 		return

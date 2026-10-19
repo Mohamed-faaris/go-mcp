@@ -18,24 +18,33 @@ import (
 type Client struct {
 	socketPath string
 	httpClient *http.Client
+	pullClient *http.Client
 	baseURL    string
 }
 
 // NewClient returns a new Podman client connecting to the given Unix socket.
 func NewClient(socketPath string) *Client {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", socketPath)
-		},
-		DisableKeepAlives: true,
+	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", socketPath)
 	}
 
 	return &Client{
 		socketPath: socketPath,
 		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   60 * time.Second,
+			Transport: &http.Transport{
+				DialContext:         dial,
+				DisableKeepAlives: true,
+			},
+			Timeout: 60 * time.Second,
+		},
+		// Image pulls are unbounded in size (e.g. node:20-bookworm ~1GB)
+		pullClient: &http.Client{
+			Transport: &http.Transport{
+				DialContext:         dial,
+				DisableKeepAlives: true,
+			},
+			Timeout: 30 * time.Minute,
 		},
 		baseURL: "http://d/v4.0.0/libpod",
 	}
@@ -443,7 +452,9 @@ func (c *Client) ListImages(ctx context.Context) ([]ImageSummary, error) {
 	return images, nil
 }
 
-// PullImage requests Podman to pull a container image.
+// PullImage requests Podman to pull a container image. The endpoint streams
+// NDJSON progress — the stream must be drained to completion for the pull to
+// finish, and embedded error entries are surfaced as failures.
 func (c *Client) PullImage(ctx context.Context, reference string) error {
 	u := fmt.Sprintf("%s/images/pull?reference=%s", c.baseURL, url.QueryEscape(reference))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
@@ -451,7 +462,7 @@ func (c *Client) PullImage(ctx context.Context, reference string) error {
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.pullClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -460,6 +471,21 @@ func (c *Client) PullImage(ctx context.Context, reference string) error {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("pull image failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var msg struct {
+			Error string `json:"error"`
+		}
+		if err := decoder.Decode(&msg); err != nil {
+			// Fully consume the stream even on malformed trailing data
+			io.Copy(io.Discard, resp.Body)
+			break
+		}
+		if msg.Error != "" {
+			return fmt.Errorf("pull image failed: %s", msg.Error)
+		}
 	}
 	return nil
 }
