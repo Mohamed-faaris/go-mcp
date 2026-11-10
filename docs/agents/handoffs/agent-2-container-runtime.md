@@ -68,16 +68,17 @@ The helper is intentionally not wired by this workstream because `internal/serve
 
 ## Validation
 
-A network-isolated local test harness ran:
+A network-isolated local Go 1.22-compatible harness was built from the Agent 2 container manager/registry/runtime definitions and workspace path/manager code, with a stub Podman client and an isolated stop-timeout HTTP adapter. It ran:
 
 ```bash
 gofmt -w internal
-go test ./...
+go test -count=1 ./...
+go vet ./...
 ```
 
-Result: PASS for the reconstructed Agent 2 domain/workspace/runtime-timeout test harness (container, workspace, and Podman stop timeout packages).
+Result: PASS for the isolated harness packages covering manager ownership/resource checks, registry persistence, workspace path/manager behavior, and stop-timeout query behavior. This harness does **not** compile the repository's actual full Podman client/runtime adapter or unrelated application packages.
 
-The full repository could not be cloned in this execution environment because DNS resolution for `github.com` / `codeload.github.com` failed. Therefore a full repository `go test ./...`, full backend build, and Podman integration test against a live Podman daemon were **not run**. Do not mark those checks as passed.
+A full repository clone could not be downloaded in this execution environment because DNS resolution for `github.com` / `codeload.github.com` failed. Therefore the actual repository-wide `go test ./...`, backend build, UI build, and live Podman daemon integration test were **not run**. Do not mark those checks as passed.
 
 ## Next action
 
