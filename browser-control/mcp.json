@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "go-mcp-browser-control": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/server/index.mjs"],
+      "cwd": "${PLUGIN_ROOT}",
+      "env": {
+        "BROWSER_BRIDGE_TOKEN": "${BROWSER_BRIDGE_TOKEN}",
+        "BROWSER_BRIDGE_PORT": "8765"
+      }
+    }
+  }
+}
