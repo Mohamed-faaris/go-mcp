@@ -348,7 +348,10 @@ func (c *Client) StopContainerWithTimeout(ctx context.Context, idOrName string, 
 		return err
 	}
 	if timeout > 0 {
-		seconds := int64((timeout + time.Second - 1) / time.Second)
+		seconds := int64(timeout / time.Second)
+		if timeout%time.Second != 0 {
+			seconds++
+		}
 		if seconds < 1 {
 			seconds = 1
 		}
