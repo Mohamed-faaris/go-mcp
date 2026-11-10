@@ -1,8 +1,10 @@
 package server
 
 import (
+  "context"
   "fmt"
   "net/http"
+  "sync"
   "os"
   "path/filepath"
   "strconv"
@@ -29,6 +31,8 @@ type Server struct {
   toolPolicies *tools.Store
   agentRunner *worker.Runner
   githubApp *credentials.GitHubAppBroker
+  taskCancelMu sync.Mutex
+  taskCancels map[string]context.CancelFunc
 }
 
 func dataPath(name string)string{
@@ -37,7 +41,7 @@ func dataPath(name string)string{
 }
 
 func New(cfg *webconfig.Config,pc *podman.Client,log *logger.Logger)*Server{
-  s:=&Server{cfg:cfg,podman:pc,log:log,registry:loadMCPRegistry(cfg),mux:http.NewServeMux()}
+  s:=&Server{cfg:cfg,podman:pc,log:log,registry:loadMCPRegistry(cfg),mux:http.NewServeMux(),taskCancels:map[string]context.CancelFunc{}}
   if store,err:=task.OpenStore(dataPath("tasks.json"));err!=nil{log.Error("task store initialization failed",map[string]string{"error":err.Error()})}else{s.tasks=store}
   if store,err:=coordination.OpenStore(dataPath("coordination.json"));err!=nil{log.Error("agent coordination store initialization failed",map[string]string{"error":err.Error()})}else{s.coordination=store}
   if store,err:=tools.OpenStore(dataPath("tool_policies.json"));err!=nil{log.Error("tool policy store initialization failed",map[string]string{"error":err.Error()})}else{s.toolPolicies=store}
