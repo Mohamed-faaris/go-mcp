@@ -1,6 +1,7 @@
 const DEFAULT_URL = 'ws://127.0.0.1:8765/bridge';
 let socket;
 let reconnectTimer;
+let heartbeatTimer;
 
 async function settings() {
   return chrome.storage.local.get({ bridgeUrl: DEFAULT_URL, token: '' });
@@ -11,8 +12,19 @@ async function connect() {
   if (!token || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
   try {
     socket = new WebSocket(`${bridgeUrl}?token=${encodeURIComponent(token)}`);
-    socket.onopen = () => { chrome.action.setBadgeText({ text: 'ON' }); chrome.action.setBadgeBackgroundColor({ color: '#16803d' }); };
-    socket.onclose = () => { chrome.action.setBadgeText({ text: 'OFF' }); scheduleReconnect(); };
+    socket.onopen = () => {
+      chrome.action.setBadgeText({ text: 'ON' });
+      chrome.action.setBadgeBackgroundColor({ color: '#16803d' });
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'heartbeat', at: Date.now() }));
+      }, 20000);
+    };
+    socket.onclose = () => {
+      clearInterval(heartbeatTimer);
+      chrome.action.setBadgeText({ text: 'OFF' });
+      scheduleReconnect();
+    };
     socket.onerror = () => socket?.close();
     socket.onmessage = async event => {
       let request;
@@ -20,9 +32,9 @@ async function connect() {
       if (request.type !== 'request' || typeof request.id !== 'number') return;
       try {
         const result = await handle(request.action, request.payload || {});
-        socket?.send(JSON.stringify({ type: 'response', id: request.id, ok: true, result }));
+        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'response', id: request.id, ok: true, result }));
       } catch (error) {
-        socket?.send(JSON.stringify({ type: 'response', id: request.id, ok: false, error: String(error?.message || error) }));
+        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'response', id: request.id, ok: false, error: String(error?.message || error) }));
       }
     };
   } catch { scheduleReconnect(); }
@@ -50,7 +62,7 @@ async function runMain(tabId, func, args = []) {
 }
 
 async function discoverWebMCP(tabId) {
-  const frames = await chrome.webNavigation?.getAllFrames?.({ tabId }).catch(() => []) || [];
+  const frames = await chrome.webNavigation.getAllFrames({ tabId }).catch(() => []);
   const origins = [...new Set(frames.map(frame => { try { return new URL(frame.url).origin; } catch { return null; } }).filter(Boolean))];
   return runMain(tabId, async frameOrigins => {
     if (!('modelContext' in document) || !document.modelContext?.getTools) return [];
@@ -71,8 +83,7 @@ async function executeWebMCP(tabId, { name, args = {}, origin }) {
     if (!('modelContext' in document) || !document.modelContext?.getTools || !document.modelContext?.executeTool) {
       throw new Error('WebMCP is unavailable in this page');
     }
-    const origins = origin ? [origin] : undefined;
-    const tools = await document.modelContext.getTools(origins ? { fromOrigins: origins } : {});
+    const tools = await document.modelContext.getTools(origin ? { fromOrigins: [origin] } : {});
     const tool = tools.find(item => item.name === name && (!origin || item.origin === origin));
     if (!tool) throw new Error(`WebMCP tool not found: ${name}`);
     return await document.modelContext.executeTool(tool, args);
@@ -88,12 +99,15 @@ async function handle(action, payload) {
   if (action === 'createTab') return chrome.tabs.create({ url: payload.url || 'chrome://newtab', active: true });
   if (action === 'closeTab') { await chrome.tabs.remove(payload.tabId); return { closed: payload.tabId }; }
   if (action === 'navigate') {
+    const parsed = new URL(payload.url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Navigation is limited to HTTP and HTTPS URLs');
     const tab = await getTab(payload.tabId);
-    await chrome.tabs.update(tab.id, { url: payload.url });
-    return { tabId: tab.id, navigatingTo: payload.url };
+    await chrome.tabs.update(tab.id, { url: parsed.href });
+    return { tabId: tab.id, navigatingTo: parsed.href };
   }
   if (action === 'screenshot') {
     const tab = await getTab(payload.tabId);
+    if (!tab.active) throw new Error('Screenshot capture is limited to the active visible tab');
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     return { tabId: tab.id, dataUrl };
   }
@@ -104,7 +118,7 @@ async function handle(action, payload) {
     title: document.title, url: location.href, text: (document.body?.innerText || '').slice(0, maxChars || 12000)
   }), [payload.maxChars || 12000]);
   if (action === 'click') return runMain(tab.id, ({ selector, text }) => {
-    let element = selector ? document.querySelector(selector) : [...document.querySelectorAll('button,a,[role="button"],input[type="submit"]')].find(el => (el.innerText || el.getAttribute('aria-label') || el.value || '').trim() === text);
+    const element = selector ? document.querySelector(selector) : [...document.querySelectorAll('button,a,[role="button"],input[type="submit"]')].find(el => (el.innerText || el.getAttribute('aria-label') || el.value || '').trim() === text);
     if (!element) throw new Error('Clickable element not found');
     if (element instanceof HTMLElement) { element.scrollIntoView({ block: 'center' }); element.click(); }
     return { clicked: true, tag: element.tagName, text: (element.innerText || '').trim().slice(0, 200) };
@@ -129,12 +143,16 @@ async function handle(action, payload) {
     const target = document.activeElement || document.body;
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
     target.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
-    return { key, dispatched: true };
+    return { key, dispatched: true, note: 'Synthetic page event; browser-level shortcuts are not triggered.' };
   }, [payload.key]);
   throw new Error(`Unknown browser action: ${action}`);
 }
 
 chrome.runtime.onInstalled.addListener(connect);
 chrome.runtime.onStartup.addListener(connect);
-chrome.storage.onChanged.addListener(connect);
+chrome.storage.onChanged.addListener(() => {
+  socket?.close();
+  socket = null;
+  connect();
+});
 connect();
