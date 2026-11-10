@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -52,9 +53,23 @@ func NewManager(runtime Runtime, registry Registry, opts ManagerOptions) (*Manag
 	if runtime == nil || registry == nil {
 		return nil, errors.New("container manager: runtime and registry are required")
 	}
+	if strings.TrimSpace(opts.WorkspaceRoot) == "" {
+		return nil, errors.New("container manager: workspace root is required")
+	}
 	root, err := filepath.Abs(opts.WorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("container manager: resolve workspace root: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("container manager: resolve workspace root symlinks: %w", err)
+	}
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("container manager: inspect workspace root: %w", err)
+	}
+	if !rootInfo.IsDir() {
+		return nil, errors.New("container manager: workspace root must be a directory")
 	}
 	allowed := make(map[string]struct{}, len(opts.AllowedImages))
 	for _, image := range opts.AllowedImages {
