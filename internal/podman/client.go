@@ -337,7 +337,7 @@ func (c *Client) StartContainer(ctx context.Context, idOrName string) error {
 
 // StopContainer stops a running container with Podman's default timeout.
 func (c *Client) StopContainer(ctx context.Context, idOrName string) error {
-	return c.StopContainerWithTimeout(ctx, idOrName, 10*time.Second)
+	return c.StopContainerWithTimeout(ctx, idOrName, 0)
 }
 
 // StopContainerWithTimeout stops a container and asks Podman to wait at most
