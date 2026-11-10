@@ -7,8 +7,9 @@ A local MCP server and Chrome Manifest V3 extension that connect AI agents to th
 1. The extension connects outbound to a loopback-only WebSocket bridge.
 2. The MCP server exposes stable browser tools over stdio.
 3. For website-specific actions, call `browser_list_page_tools` and then `browser_execute_page_tool`.
-4. If the page has no WebMCP tools, use the generic browser tools such as `browser_read_page`, `browser_click`, and `browser_type`.
-5. Page tools are discovered again on each request, so route changes and dynamic registrations are reflected.
+4. When WebMCP tools are found, the MCP server registers each one as a separate `webmcp_*` tool with its page-provided input schema. MCP clients receive tool-list change notifications.
+5. If the page has no WebMCP tools, use the generic browser tools such as `browser_read_page`, `browser_click`, and `browser_type`.
+6. Page tools are discovered again when `browser_list_page_tools` is called, so route changes and dynamic registrations are reflected. The most recently inspected tab owns the dynamic `webmcp_*` tool set.
 
 WebMCP is experimental and feature-detected. It is not assumed to exist on every site or Chrome build. The extension falls back to DOM operations when the page does not expose WebMCP. See the [Chrome WebMCP documentation](https://developer.chrome.com/docs/ai/webmcp).
 
@@ -58,7 +59,7 @@ Keep the MCP server process running. The extension reconnects automatically when
 
 ### Generic MCP host
 
-Use `browser-control/mcp.json` as a configuration template. Resolve `PLUGIN_ROOT` to the absolute `browser-control` directory and provide `BROWSER_BRIDGE_TOKEN` in the host's environment.
+Use `browser-control/mcp.json` as a configuration template. Resolve `PLUGIN_ROOT` to the absolute `browser-control` directory and replace `REPLACE_WITH_GENERATED_RANDOM_TOKEN` with the generated token.
 
 ### Existing go-mcp CLI agent
 
@@ -97,6 +98,7 @@ Then run the agent normally. The existing Go MCP registry launches this Node ser
 - Keep the token private. Anyone who obtains it can control the connected browser.
 - The extension requests broad page access because it must operate on arbitrary tabs. Chrome may restrict protected pages such as `chrome://` and the Chrome Web Store.
 - The fallback click/type implementation is DOM-level automation, not trusted physical input. Synthetic keyboard events do not trigger browser-level shortcuts.
+- Dynamic `webmcp_*` tools are announced through MCP tool-list change notifications. MCP clients must refresh tool lists to see them. The existing Go agent can still use `browser_execute_page_tool` even if its startup-time tool cache has not refreshed.
 - Screenshot capture is limited to the active visible tab.
 - Browser-level navigation, tab closing, form submission, purchases, messages, and other consequential actions should remain subject to the MCP host's approval controls.
 - WebMCP tools in cross-origin frames are visible only when the frame and origin permissions allow them.
