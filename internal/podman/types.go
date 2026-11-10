@@ -94,15 +94,24 @@ type ImageSummary struct {
 
 // CreateContainerOpts contains options for creating a new agent sandbox container.
 type CreateContainerOpts struct {
-	Name        string            `json:"name"`
-	Image       string            `json:"image"`
-	ProjectDir  string            `json:"projectDir"`  // Host path to bind-mount to /workspace
-	MemoryLimit string            `json:"memoryLimit"` // e.g. "2g"
-	CPULimit    string            `json:"cpuLimit"`    // e.g. "2"
-	Env         []string          `json:"env"`
-	MCPTools    []MCPToolSpec     `json:"mcpTools"`
-	Labels      map[string]string `json:"labels"`
-	Devices     []string          `json:"devices"`     // Host device paths like /dev/video0
+	Name             string            `json:"name"`
+	Image            string            `json:"image"`
+	ProjectDir       string            `json:"projectDir"` // Host path to the manager-validated task workspace
+	MemoryLimit      string            `json:"memoryLimit"`
+	CPULimit         string            `json:"cpuLimit"`
+	PidsLimit        int64             `json:"pidsLimit,omitempty"`
+	Network          string            `json:"network,omitempty"`
+	OwnerID          string            `json:"ownerId,omitempty"`
+	TaskID           string            `json:"taskId,omitempty"`
+	ProjectID        string            `json:"projectId,omitempty"`
+	PresetID         string            `json:"presetId,omitempty"`
+	ReadOnlyRootfs   bool              `json:"readOnlyRootfs,omitempty"`
+	NoNewPrivileges  bool              `json:"noNewPrivileges,omitempty"`
+	DropCapabilities []string          `json:"dropCapabilities,omitempty"`
+	Env              []string          `json:"env"`
+	MCPTools         []MCPToolSpec     `json:"mcpTools"`
+	Labels           map[string]string `json:"labels"`
+	Devices          []string          `json:"devices"` // Host device paths; workload adapters must leave this empty.
 }
 
 type MCPToolSpec struct {

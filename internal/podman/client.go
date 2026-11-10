@@ -92,26 +92,16 @@ func (c *Client) ListContainers(ctx context.Context) ([]ContainerSummary, error)
 		return nil, fmt.Errorf("failed to decode containers list: %w", err)
 	}
 
-	// Filter for containers managed by go-mcp or prefixed with gomcp-
+	// A container name is not proof of ownership. Only a manager-issued
+	// label qualifies it for the managed-container inventory; authorization
+	// must still be checked against the manager's durable registry.
 	var filtered []ContainerSummary
 	for _, item := range all {
-		isManaged := false
-		if item.Labels != nil && item.Labels["gomcp.managed"] == "true" {
-			isManaged = true
+		if item.Labels == nil || item.Labels["gomcp.managed"] != "true" {
+			continue
 		}
-		for _, name := range item.Names {
-			cleanName := strings.TrimPrefix(name, "/")
-			if strings.HasPrefix(cleanName, "gomcp-") {
-				isManaged = true
-				break
-			}
-		}
-		if isManaged {
-			if item.Labels != nil {
-				item.ProjectDir = item.Labels["gomcp.project"]
-			}
-			filtered = append(filtered, item)
-		}
+		item.ProjectDir = item.Labels["gomcp.project"]
+		filtered = append(filtered, item)
 	}
 
 	return filtered, nil
@@ -194,17 +184,34 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 		opts.Image = "ubuntu:24.04"
 	}
 
-	labels := opts.Labels
-	if labels == nil {
-		labels = make(map[string]string)
+	// Copy caller labels instead of mutating the caller-owned map. Manager
+	// identity labels are always overwritten from typed fields below, never
+	// trusted from arbitrary Labels input.
+	labels := make(map[string]string, len(opts.Labels)+8)
+	for key, value := range opts.Labels {
+		// The entire gomcp.* namespace is manager-owned. Filtering the namespace
+		// prevents callers from forging current or future lifecycle/security labels.
+		if strings.HasPrefix(strings.ToLower(key), "gomcp.") {
+			continue
+		}
+		labels[key] = value
 	}
 	labels["gomcp.managed"] = "true"
 	labels["gomcp.created_at"] = time.Now().UTC().Format(time.RFC3339)
-	if opts.ProjectDir != "" {
-		labels["gomcp.project"] = opts.ProjectDir
+	setReservedLabel := func(key, value string) {
+		if value == "" {
+			delete(labels, key)
+			return
+		}
+		labels[key] = value
 	}
+	setReservedLabel("gomcp.owner_id", opts.OwnerID)
+	setReservedLabel("gomcp.task_id", opts.TaskID)
+	setReservedLabel("gomcp.project_id", opts.ProjectID)
+	setReservedLabel("gomcp.preset_id", opts.PresetID)
+	setReservedLabel("gomcp.project", opts.ProjectDir)
 
-	// Prepare MCP tools configuration into an environment variable or metadata
+	// Prepare MCP tools configuration into an environment variable or metadata.
 	toolsJSON, _ := json.Marshal(opts.MCPTools)
 	labels["gomcp.mcp_tools"] = string(toolsJSON)
 
@@ -222,7 +229,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 	memBytes := parseMemoryLimit(opts.MemoryLimit)
 	cpuQuota, cpuPeriod := parseCPULimit(opts.CPULimit)
 
-	envPairs := append(opts.Env,
+	envPairs := append(append([]string(nil), opts.Env...),
 		"GOMCP_CONTAINER=true",
 		"WORKSPACE=/workspace",
 		fmt.Sprintf("GOMCP_MCP_SERVERS=%s", string(toolsJSON)),
@@ -235,27 +242,36 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 		}
 	}
 
+	resourceLimits := map[string]interface{}{
+		"memory": map[string]interface{}{"limit": memBytes},
+		"cpu": map[string]interface{}{"quota": cpuQuota, "period": cpuPeriod},
+	}
+	if opts.PidsLimit > 0 {
+		resourceLimits["pids"] = map[string]interface{}{"limit": opts.PidsLimit}
+	}
 	payload := map[string]interface{}{
-		"name":            name,
-		"image":           opts.Image,
-		"command":         []string{"/bin/sh", "-c", "while true; do sleep 3600; done"},
-		"terminal":        true,
-		"stdin":           true,
-		"labels":          labels,
-		"mounts":          mounts,
-		"env":             env,
-		"work_dir":        "/workspace",
-		"resource_limits": map[string]interface{}{
-			"memory": map[string]interface{}{
-				"limit": memBytes,
-			},
-			"cpu": map[string]interface{}{
-				"quota":  cpuQuota,
-				"period": cpuPeriod,
-			},
-		},
+		"name": name,
+		"image": opts.Image,
+		"command": []string{"/bin/sh", "-c", "while true; do sleep 3600; done"},
+		"terminal": true,
+		"stdin": true,
+		"labels": labels,
+		"mounts": mounts,
+		"env": env,
+		"work_dir": "/workspace",
+		"read_only_filesystem": opts.ReadOnlyRootfs,
+		"no_new_privileges": opts.NoNewPrivileges,
+		"read_write_tmpfs": true,
+		"resource_limits": resourceLimits,
 	}
 
+	if len(opts.DropCapabilities) > 0 {
+		payload["cap_drop"] = opts.DropCapabilities
+	}
+	if opts.Network != "" {
+		// Podman's Libpod create API accepts named networks in the Networks map.
+		payload["Networks"] = map[string]interface{}{opts.Network: map[string]interface{}{}}
+	}
 	var devices []map[string]interface{}
 	for _, dev := range opts.Devices {
 		dev = strings.TrimSpace(dev)
@@ -324,10 +340,31 @@ func (c *Client) StartContainer(ctx context.Context, idOrName string) error {
 	return nil
 }
 
-// StopContainer stops a running container.
+// StopContainer stops a running container with Podman's default timeout.
 func (c *Client) StopContainer(ctx context.Context, idOrName string) error {
-	u := fmt.Sprintf("%s/containers/%s/stop", c.baseURL, url.PathEscape(idOrName))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
+	return c.StopContainerWithTimeout(ctx, idOrName, 0)
+}
+
+// StopContainerWithTimeout stops a container and asks Podman to wait at most
+// timeout before sending SIGKILL. A non-positive timeout uses Podman's default.
+func (c *Client) StopContainerWithTimeout(ctx context.Context, idOrName string, timeout time.Duration) error {
+	u, err := url.Parse(fmt.Sprintf("%s/containers/%s/stop", c.baseURL, url.PathEscape(idOrName)))
+	if err != nil {
+		return err
+	}
+	if timeout > 0 {
+		seconds := int64(timeout / time.Second)
+		if timeout%time.Second != 0 {
+			seconds++
+		}
+		if seconds < 1 {
+			seconds = 1
+		}
+		query := u.Query()
+		query.Set("t", strconv.FormatInt(seconds, 10))
+		u.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
 	if err != nil {
 		return err
 	}
