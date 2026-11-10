@@ -5,35 +5,21 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  html { color-scheme: light; }
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    margin: 0;
+    min-width: 320px;
   }
+  button,input,textarea,select { font: inherit; }
+  a { color: inherit; text-decoration: none; }
 }
 
-/* Custom modern scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0b0f19;
-}
-::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #334155;
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #f5f5f5; }
+::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
 
-.glow-blue {
-  box-shadow: 0 0 20px -5px rgba(59, 130, 246, 0.4);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 20px -5px rgba(16, 185, 129, 0.35);
-}
+:focus-visible { outline: 2px solid #171717; outline-offset: 2px; }

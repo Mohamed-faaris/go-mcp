@@ -1,148 +1,63 @@
-# go-mcp Web UI & Podman Sandbox Architecture — Agent Handoff
+# go-mcp — Container-Native Agent Rework Handoff
 
-> **CRITICAL DIRECTIVE**: Read this entire document before modifying code.
-> This codebase implements an autonomous Ubuntu computer control agent via MCP in Go (`go-mcp`)
-> and its Web UI container manager (`go-mcp-server`) that spins up, views, duplicates, and manages
-> sub-containers running Podman with bundled MCP tools.
+## Source of truth
 
----
+The repository is the specification and implementation source of truth. All agents must read `AGENTS.md`, `REWORK_PLAN.md`, `ARCHITECTURE.md`, `docs/agents/COORDINATION.md`, and `docs/agents/WORKSTREAMS.md` before coding.
 
-## 1. Project Context & Current State
+Use `docs/agents/WEB_AGENT_BOOTSTRAP.md` to start another web agent or new chat. The coordination service is planned; until implemented, Git branches, PRs, and files under `docs/agents/handoffs/` are the durable communication/handoff mechanism. Do not claim live messaging/session resume exists before it is implemented.
 
-- **Repository**: `github.com/Mohamed-faaris/go-mcp`
-- **Location**: `/home/mfk01/Projects/econ-systems/tools/go-mcp`
-- **Language**: Go 1.22+ (Backend) & TypeScript / React + Vite + Bun + Tailwind/shadcn (Frontend in `web/`)
-- **Key Philosophy**: Clean Go standard library patterns, minimal external dependencies (`gopkg.in/yaml.v3`, `nhooyr.io/websocket`).
+## Product direction
 
-### Core Existing Packages (CLI Agent - Completed & Tested)
-- `internal/config`: Loads `.env`, validates runtime configuration.
-- `internal/logger`: Structured JSON logging to stderr and log file.
-- `internal/mcp`: JSON-RPC 2.0 stdio MCP client & tool registry with dynamic discovery.
-- `internal/llm`: OpenAI-compatible API client with function/tool calling.
-- `internal/context`: Context manager preserving system prompt and trimming old messages.
-- `internal/permission`: Interactive approval modes (`all`, `dangerous`, `none`) & shell blocking.
-- `internal/screenshot`: Screenshot capture via connected MCP servers.
-- `internal/agent`: Autonomous execution loop.
-- `cmd/go-mcp`: CLI entry point (`./go-mcp "task"`, `./go-mcp --check`).
+Rework this repository into a container-native autonomous software engineering platform. The target agent works on a checked-out project in an isolated task container, runs checks, creates commits, and produces a report. It is not primarily a desktop-control agent.
 
----
+## Existing foundations to retain
 
-## 2. Podman Container Management Architecture
+- Go backend and Podman client, subject to security hardening.
+- Existing container lifecycle and image management where correct.
+- React + TypeScript + Vite dashboard, redesigned around tasks.
+- OpenAI-compatible LLM client and agent loop where reusable.
+- MCP adapter as an optional integration, not the core filesystem/terminal interface.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Host Machine                                                │
-│  - Projects Folder: /home/user/projects (bind mount)        │
-│  - Optional scratch: /home/user/tmp-podmans                 │
-│  - Podman socket: /run/podman/podman.sock                   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ (socket & dir mounts)
-┌──────────────────────────────▼──────────────────────────────┐
-│ Main Container ("go-mcp-ui" / go-mcp-server)                │
-│  - React Frontend (Bun + Vite + shadcn/ui)                  │
-│  - Go REST & WebSocket API Server                           │
-│  - Podman Socket Client (/v4.0.0/libpod REST API)           │
-│  - Roles & Auth: Viewer vs Admin                            │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Spawns sibling containers via Podman API
-       ┌───────────────────────┼───────────────────────┐
-       ▼                       ▼                       ▼
-┌──────────────┐        ┌──────────────┐        ┌──────────────┐
-│ gomcp-agent1 │        │ gomcp-agent2 │        │ gomcp-agent3 │
-│ Image:       │        │ Image:       │        │ Custom Image │
-│ ubuntu:24.04 │        │ node/python  │        │ Bundled MCP  │
-│ /workspace   │        │ /workspace   │        │ /workspace   │
-│ Bundled MCP  │        │ Bundled MCP  │        │ Bundled MCP  │
-└──────────────┘        └──────────────┘        └──────────────┘
-```
+## Required capabilities
 
-### Access Control Matrix
-| Feature | Viewer | Admin |
-|---|:---:|:---:|
-| List running / stopped containers | ✅ | ✅ |
-| View container logs | ✅ | ✅ |
-| Access live interactive terminal (xterm.js WebSocket) | ✅ | ✅ |
-| View screenshots captured from container | ✅ | ✅ |
-| Spin up new Podman container (select image, dir) | ❌ | ✅ |
-| Start / Stop / Restart container | ❌ | ✅ |
-| Duplicate / Clone container | ❌ | ✅ |
-| Delete / Destroy container | ❌ | ✅ |
-| Clone or link project directories | ❌ | ✅ |
-| Configure custom MCP tools & pull images | ❌ | ✅ |
+- Runtime presets: Node.js + pnpm, Bun, Python + uv, Node.js + npm, Go, Ubuntu Base.
+- Repository detection and task workspaces.
+- Existing Git remote detection. GitHub remotes use host-brokered, temporary repository-scoped GitHub App tokens. Local-only repositories continue to work without remote credentials.
+- Container-owned tools for files, shell, processes, search, Git, tests, builds, and reports.
+- UI-configurable tool policies: automatic, approval required, disabled.
+- One-time approvals for permitted high-impact operations. Deleting another managed task's container requires manager-mediated approval. Unmanaged/host containers and host escape operations remain hard-denied.
+- Persistent agent sessions, project/task messaging, work claims, path leases, and versioned context snapshots so a new web agent/chat can resume work.
+- Task-first React/shadcn UI, monochrome black-and-white theme, advanced settings in collapsibles/dialogs.
+- Authenticated API ingress through Cloudflare Tunnel. Only the control plane is publicly reachable.
 
-### Naming & Tagging Convention
-All agent containers managed by this system are named with prefix `gomcp-` and labeled with:
-- `gomcp.managed`: `"true"`
-- `gomcp.project`: `<mapped-project-path>`
-- `gomcp.created_at`: `<timestamp>`
+## Security constraints
 
----
+The control plane alone accesses the Podman socket. Workload agents have broad development access inside their assigned container only. Never expose host root, the Podman socket, or another task's workspace. Do not pass permanent credentials into a workload. Verify ownership from the manager registry rather than container names.
 
-## 3. Web UI Backend Architecture (`internal/`)
+## Required task lifecycle
 
-1. **`internal/webconfig`**:
-   - Loads `config/web_config.yaml` using `gopkg.in/yaml.v3`.
-   - Expands environment variables like `${ADMIN_PASSWORD}` and `${VIEWER_PASSWORD}`.
-   - Configures server port, host, podman socket path, projects dir, default MCP tools.
+1. Authenticate/authorize.
+2. Create and queue task.
+3. Clone or snapshot project and record base commit.
+4. Select runtime preset and provision isolated container.
+5. Issue scoped task tools and repository credentials if needed.
+6. Run agent with cancellation, event streaming, and bounded resource/time limits.
+7. Run applicable formatting/lint/typecheck/build/test commands.
+8. Review diff, commit changes, and push only with allowed credentials/policy.
+9. Generate structured report.
+10. Clean up container/credentials according to policy.
 
-2. **`internal/podman`**:
-   - Directly connects to `/run/podman/podman.sock` using `net.Dial("unix", socketPath)` with standard `http.Client`.
-   - Implements Podman Libpod v4 REST endpoints:
-     - `GET /v4.0.0/libpod/containers/json?all=true`
-     - `GET /v4.0.0/libpod/containers/{name}/json`
-     - `POST /v4.0.0/libpod/containers/create`
-     - `POST /v4.0.0/libpod/containers/{name}/start`
-     - `POST /v4.0.0/libpod/containers/{name}/stop`
-     - `DELETE /v4.0.0/libpod/containers/{name}?force=true`
-     - `GET /v4.0.0/libpod/containers/{name}/logs`
-     - `POST /v4.0.0/libpod/containers/{name}/exec` (interactive tty sessions)
-     - `GET /v4.0.0/libpod/images/json`
-     - `POST /v4.0.0/libpod/images/pull`
+## Multi-agent implementation
 
-3. **`internal/server`**:
-   - Go 1.22 `http.ServeMux` with pattern matching (`GET /api/...`, `POST /api/...`).
-   - Basic HTTP Auth supporting `viewer` and `admin` roles.
-   - REST API endpoints for container lifecycle, project folder browsing/linking, image listing.
-   - WebSocket terminal proxy via `nhooyr.io/websocket` connecting browser xterm.js to `podman exec`.
-   - Fallback SPA handler for `web/dist`.
+Parallel workstreams are defined in `docs/agents/WORKSTREAMS.md`. Each agent owns separate paths and a separate branch. Shared contracts live in `docs/contracts/`. The integration coordinator owns cross-workstream merges and full acceptance. Every chat/session handoff records branch, base/latest commit, changed paths, checks, blockers, and next actions.
 
-4. **`cmd/go-mcp-server/main.go`**:
-   - Flags: `--config config/web_config.yaml`.
-   - Graceful shutdown handling.
+## Completion criteria
 
----
-
-## 4. Frontend Architecture (`web/`)
-
-- Built with **Bun** + **Vite** + **React** + **TypeScript** + **TailwindCSS** + **shadcn/ui**.
-- Dark aesthetic, modern HUD styling with rich visual cues.
-- Real-time terminal with `@xterm/xterm` + `@xterm/addon-fit`.
-- Routes:
-  - `/login`: Role login (Admin / Viewer credentials stored base64 in localStorage).
-  - `/`: Container grid with real-time status indicators (CPU, Memory, State, Project link).
-  - `/containers/new`: Admin wizard to spin up container (choose image, choose project dir or tmp, select bundled MCP tools).
-  - `/containers/:id`: Container details, logs, screenshot viewer, live interactive bash terminal.
-  - `/projects`: Project directory linker & clone tool.
-  - `/images`: Base image manager & puller.
-
----
-
-## 5. Development & Execution Commands
-
-```bash
-# Backend dependencies
-go get gopkg.in/yaml.v3
-go get nhooyr.io/websocket
-
-# Build backend
-go build -o go-mcp-server ./cmd/go-mcp-server
-
-# Frontend dependencies & build
-cd web
-bun install
-bun run build # builds into web/dist
-cd ..
-
-# Run server locally
-./go-mcp-server --config config/web_config.yaml
-```
+- Tasks can run in the selected runtime presets.
+- Existing Git remotes are handled safely with scoped host-managed credentials.
+- Agent tools are scoped to the current task and enforced server-side.
+- Approval-required tools pause until explicit one-time authorization.
+- Multi-agent messages and context snapshots persist across chats once the coordination service is implemented.
+- Another agent can resume from a committed handoff and current repository state even before the live coordination service exists.
+- Dashboard is monochrome, task-first, and hides advanced settings behind collapsibles/dialogs.
+- Reports distinguish passed, failed, skipped, and not-run checks.

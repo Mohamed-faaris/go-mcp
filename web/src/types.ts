@@ -135,3 +135,118 @@ export interface PublicConfig {
   images: ConfiguredImage[];
   authMode: string;
 }
+
+
+export interface RuntimePreset {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  setupCommand: string;
+  defaultMemory: string;
+  defaultCpus: string;
+  packageManager: string;
+}
+
+export interface TaskItem {
+  id: string;
+  ownerId: string;
+  projectId: string;
+  projectPath: string;
+  prompt: string;
+  presetId: string;
+  status: string;
+  containerId?: string;
+  workspacePath?: string;
+  remoteUrl?: string;
+  branchName?: string;
+  baseCommit?: string;
+  resultCommit?: string;
+  summary?: string;
+  error?: string;
+  keepContainer?: boolean;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  updatedAt: string;
+}
+
+export interface TaskCheck {
+  name: string;
+  command?: string;
+  status: string;
+  exitCode?: number;
+  duration?: string;
+  output?: string;
+}
+
+export interface TaskReport {
+  taskId: string;
+  summary: string;
+  changedFiles: string[];
+  checks: TaskCheck[];
+  commits: string[];
+  warnings: string[];
+  artifacts: string[];
+  startedAt: string;
+  finishedAt: string;
+}
+
+export interface ToolDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  scope: string;
+  risk: string;
+  source: string;
+  enabled: boolean;
+  policy: 'automatic'|'approval_required'|'disabled'|'hard_denied';
+  hardDenied: boolean;
+  updatedAt: string;
+}
+
+export interface ApprovalItem {
+  id: string;
+  taskId: string;
+  agentSessionId?: string;
+  toolId: string;
+  resourceType: string;
+  resourceId: string;
+  argumentsDigest: string;
+  summary: string;
+  status: string;
+  requestedBy: string;
+  reviewedBy?: string;
+  createdAt: string;
+  expiresAt: string;
+  reviewedAt?: string;
+}
+
+export interface AgentSession {
+  id: string;
+  ownerId: string;
+  projectId: string;
+  taskId?: string;
+  workstreamId?: string;
+  agentLabel: string;
+  branch?: string;
+  commit?: string;
+  status: string;
+  lastHeartbeatAt: string;
+  createdAt: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  cursor: number;
+  projectId: string;
+  taskId?: string;
+  channel: string;
+  senderSessionId: string;
+  recipientSessionId?: string;
+  type: string;
+  body: string;
+  correlationId?: string;
+  createdAt: string;
+}

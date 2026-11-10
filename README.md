@@ -1,174 +1,84 @@
 # go-mcp
 
-Autonomous AI agent that controls an Ubuntu computer through MCP servers, powered by any OpenAI-compatible API.
+**Container-native autonomous software engineering platform.**
+
+go-mcp accepts a development task, provisions an isolated project container, runs an agent inside that workspace, executes validation, records Git changes, and returns a report.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│  CLI                                                │
-│  go-mcp "open firefox and search for X"             │
-├─────────────────────────────────────────────────────┤
-│  Agent Loop                                         │
-│  Planning → LLM calls → Tool selection → Context    │
-├──────────┬──────────┬───────────────────────────────┤
-│ Permission│ Context  │ Screenshot                    │
-│ Manager   │ Manager  │ Handler                       │
-├───────────┴──────────┴──────────────────────────────┤
-│  MCP Client Layer                                   │
-│  Server connections → Tool discovery → Execution    │
-├──────────┬──────────┬───────────────────────────────┤
-│ Desktop  │Playwright│ Ubuntu GUI                     │
-│Commander │  MCP     │   MCP                          │
-├──────────┴──────────┴───────────────────────────────┤
-│  Ubuntu Operating System                            │
-│  Files · Apps · Browser · Terminal · Desktop         │
-└─────────────────────────────────────────────────────┘
+```text
+ChatGPT / API / Web UI
+        | HTTPS
+ Cloudflare Tunnel
+        |
+ go-mcp-server (control plane)
+        |
+ Task Scheduler + Agent Runtime
+        |
+ Container Manager (Podman)
+        |
+ Isolated project container
+   | project checkout
+   | shell + filesystem + processes
+   | Git + build + tests
+   | task-scoped agent tools
+        |
+ Report + commit + artifacts
 ```
 
-## Quick start
+The control plane owns the Podman socket and container lifecycle. Workload agents receive broad development access **inside their assigned container only**. They do not receive host root, the Podman socket, or access to other task workspaces.
 
-```bash
-# 1. Clone and enter the repo
-git clone https://github.com/Mohamed-faaris/go-mcp.git
-cd go-mcp
+## Source of truth and multi-agent development
 
-# 2. Configure
-cp .env.example .env
-chmod 600 .env
-# Edit .env with your API key and model settings
+The Git repository is the canonical source for requirements, architecture, interfaces, decisions, implementation, and handoffs. A chat transcript is temporary and is never the only place a requirement or decision may exist.
 
-# 3. Configure MCP servers
-# Edit config/mcp_servers.json with your MCP server commands
+Before making changes, every coding/web agent must read:
+1. `AGENTS.md`
+2. `REWORK_PLAN.md`
+3. `ARCHITECTURE.md`
+4. `docs/agents/COORDINATION.md`
+5. `docs/agents/WORKSTREAMS.md`
+6. Relevant files under `docs/contracts/`
 
-# 4. Build
-go build -o go-mcp ./cmd/go-mcp
+Use [the web-agent bootstrap prompt](docs/agents/WEB_AGENT_BOOTSTRAP.md) to start an independent agent/chat. Use a dedicated branch and handoff per workstream. The coordination service is planned to persist agent sessions, messages, claims, path leases, and context snapshots so a different web agent can resume after the original chat ends.
 
-# 5. Check MCP connections
-./go-mcp --check
+Until that service is implemented, use Git branches, PRs, and `docs/agents/handoffs/` as the durable coordination mechanism. Do not assume live agent communication is already available.
 
-# 6. Run a task
-./go-mcp "open the browser and search for Go tutorials"
-```
+## Product capabilities
 
-## Configuration
+- Creates an isolated container for each task.
+- Supports runtime presets for Node.js + pnpm, Bun, Python + uv, Node.js + npm, Go, and Ubuntu Base.
+- Detects project metadata and Git remotes.
+- Uses host-managed, repository-scoped GitHub credentials for supported GitHub remotes.
+- Runs an autonomous coding agent with terminal, filesystem, process, search, Git, build, and test tools.
+- Applies configurable per-tool policies and one-time human approvals for high-impact operations.
+- Produces reports with changed files, commits, checks, errors, and artifacts.
+- Coordinates multiple agents through persistent project/task messages and versioned context handoffs.
 
-All settings are loaded from `.env` (see [`.env.example`](.env.example)):
+## Repository layout
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPENAI_BASE_URL` | API endpoint URL | (required) |
-| `OPENAI_API_KEY` | API key | (required) |
-| `OPENAI_MODEL` | Model name | (required) |
-| `MCP_CONFIG_PATH` | Path to MCP server config | `config/mcp_servers.json` |
-| `MAX_STEPS` | Max agent loop iterations | `12` |
-| `MAX_TOOL_CALLS` | Max total tool invocations | `24` |
-| `REQUEST_TIMEOUT_SECONDS` | HTTP request timeout | `90` |
-| `APPROVAL_MODE` | `all` / `dangerous` / `none` | `all` |
-| `ALLOW_SHELL` | Allow shell command execution | `true` |
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARN` / `ERROR` | `INFO` |
-| `LOG_FILE` | Log file path | `logs/agent.log` |
-
-## MCP servers
-
-Tools are discovered at runtime from MCP servers defined in `config/mcp_servers.json`:
-
-| Server | Responsibility |
-|---|---|
-| **Desktop Commander** | Terminal commands, file operations, process management |
-| **Playwright MCP** | Browser navigation, clicking, forms, page content |
-| **Ubuntu GUI MCP** | Screenshots, mouse, keyboard, desktop interaction |
-
-The agent prefers structured browser tools (Playwright) and falls back to screenshot-based GUI control when needed.
-
-## Approval modes
-
-| Mode | Behavior |
-|---|---|
-| `all` | Every tool call requires explicit user approval |
-| `dangerous` | Only high-risk actions (shell, file writes, GUI clicks) need approval |
-| `none` | Fully autonomous — no approvals required |
-
-## Project structure
-
-```
-go-mcp/
-├── cmd/go-mcp/          # CLI entry point
-│   └── main.go
-├── internal/
-│   ├── agent/           # Autonomous execution loop
-│   ├── config/          # Configuration loading and validation
-│   ├── context/         # Conversation history management
-│   ├── llm/             # OpenAI-compatible API client
-│   ├── logger/          # Structured JSON logging
-│   ├── mcp/             # MCP protocol client and registry
-│   ├── permission/      # Approval policies and risk checks
-│   └── screenshot/      # Screenshot capture and encoding
-├── config/
-│   └── mcp_servers.json # MCP server definitions
-├── .env.example         # Configuration template
-└── README.md
-```
+- Go backend, agent runtime, and task/control-plane services.
+- Podman container manager and isolated workload runtime.
+- React + TypeScript + Vite frontend using shadcn/ui conventions.
+- `docs/agents/`: coding-agent instructions, workstream assignments, and context handoffs.
+- `docs/contracts/`: shared cross-workstream API and interface contracts.
+- `docs/decisions/`: accepted architectural decisions.
 
 ## Development
 
 ```bash
-# Run tests
 go test ./...
+go build ./cmd/go-mcp ./cmd/go-mcp-server
 
-# Build
-go build -o go-mcp ./cmd/go-mcp
-
-# Run directly
-go run ./cmd/go-mcp "your task here"
-```
-
-## Security notes
-
-- `.env` is in `.gitignore` — never commit secrets
-- The API key is never sent to the model or included in tool arguments
-- Permission checks are enforced in Go before every tool call
-- Shell execution can be disabled with `ALLOW_SHELL=false`
-- Set `APPROVAL_MODE=all` until you trust the agent's behavior
-
-## Web UI & Podman Sandbox Manager
-
-`go-mcp-server` provides a web interface to spin up, monitor, and interact with isolated Ubuntu sandbox containers running Podman:
-
-- **Dashboard**: Live container metrics, states, and project mount tracking.
-- **Interactive Shell**: Low-latency browser terminal powered by `xterm.js` and WebSockets.
-- **Host Hardware Pass-Through**: Direct V4L2 device pass-through (`/dev/videoX`) for Econ Systems cameras (e.g. See3CAM_24CUG) and USB webcams.
-- **Container Lifecycle**: Spin up, duplicate/clone, start, stop, and destroy sandboxes.
-- **Projects & Scratch**: Bind-mount host project directories into `/workspace`.
-
-### Building and Running the Web UI
-
-```bash
-# 1. Build frontend (in web/)
 cd web
-bun install # or npm install
-bun run build # outputs to web/dist
-cd ..
-
-# 2. Build and run server
-go build -o go-mcp-server ./cmd/go-mcp-server
-./go-mcp-server --config config/web_config.yaml
+bun install
+bun run build
 ```
 
-Access the UI at `http://localhost:8080`. Default login credentials:
-- **Admin**: `admin` / `admin123`
-- **Viewer**: `viewer` / `viewer123`
+See [REWORK_PLAN.md](REWORK_PLAN.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [HANDOFF.md](HANDOFF.md).
 
-## Roadmap
+## Deployment
 
-- [x] Phase 1: Configuration and MCP connectivity
-- [x] Phase 2: LLM tool-calling loop
-- [x] Phase 3: GUI and vision support
-- [x] Phase 4: Permissions and reliability
-- [x] Phase 5: Task planning and recovery
-- [x] Phase 6: Web UI dashboard & Podman sandboxing
-- [x] Phase 7: Hardware & V4L2 camera pass-through
+Run the control plane on a trusted host with access to the Podman socket. For remote access, route Cloudflare Tunnel to the authenticated control-plane HTTP server. Never expose the Podman socket or workload container ports directly to the public internet.
 
-## License
-
-MIT
+Do not use sample local credentials from development configuration in a deployed environment. Configure unique secrets and secure authentication before exposing the service.
