@@ -193,6 +193,11 @@ mcp.registerTool('browser_get_active_tab', {
   inputSchema: z.object({})
 }, async () => textResult(await browserRequest('getActiveTab')));
 
+mcp.registerTool('browser_activate_tab', {
+  description: 'Activate and focus a Chrome tab by tab ID.',
+  inputSchema: z.object({ tabId: z.number().int().positive() })
+}, async ({ tabId }) => textResult(await browserRequest('activateTab', { tabId })));
+
 mcp.registerTool('browser_create_tab', {
   description: 'Create a new Chrome tab, optionally navigating to a URL.',
   inputSchema: z.object({ url: z.string().url().optional() })
