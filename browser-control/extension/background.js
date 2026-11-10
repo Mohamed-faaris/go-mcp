@@ -96,7 +96,16 @@ async function handle(action, payload) {
     const tab = await getTab();
     return { id: tab.id, title: tab.title, url: tab.url, active: tab.active };
   }
-  if (action === 'createTab') return chrome.tabs.create({ url: payload.url || 'chrome://newtab', active: true });
+  if (action === 'activateTab') {
+    const tab = await chrome.tabs.update(payload.tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    return { id: tab.id, active: tab.active, url: tab.url, title: tab.title };
+  }
+  if (action === 'createTab') {
+    const url = payload.url || 'chrome://newtab';
+    if (payload.url && !['http:', 'https:'].includes(new URL(url).protocol)) throw new Error('New tabs may only navigate to HTTP and HTTPS URLs');
+    return chrome.tabs.create({ url, active: true });
+  }
   if (action === 'closeTab') { await chrome.tabs.remove(payload.tabId); return { closed: payload.tabId }; }
   if (action === 'navigate') {
     const parsed = new URL(payload.url);
