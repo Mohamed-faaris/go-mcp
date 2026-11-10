@@ -189,6 +189,11 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 	// trusted from arbitrary Labels input.
 	labels := make(map[string]string, len(opts.Labels)+8)
 	for key, value := range opts.Labels {
+		// The entire gomcp.* namespace is manager-owned. Filtering the namespace
+		// prevents callers from forging current or future lifecycle/security labels.
+		if strings.HasPrefix(strings.ToLower(key), "gomcp.") {
+			continue
+		}
 		labels[key] = value
 	}
 	labels["gomcp.managed"] = "true"
@@ -224,7 +229,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 	memBytes := parseMemoryLimit(opts.MemoryLimit)
 	cpuQuota, cpuPeriod := parseCPULimit(opts.CPULimit)
 
-	envPairs := append(opts.Env,
+	envPairs := append(append([]string(nil), opts.Env...),
 		"GOMCP_CONTAINER=true",
 		"WORKSPACE=/workspace",
 		fmt.Sprintf("GOMCP_MCP_SERVERS=%s", string(toolsJSON)),
