@@ -1,0 +1,19 @@
+{
+  "name": "go-mcp-browser-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Chrome extension bridge and MCP server with WebMCP-first browser automation.",
+  "scripts": {
+    "start": "node server/index.mjs",
+    "check": "node --check server/index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
