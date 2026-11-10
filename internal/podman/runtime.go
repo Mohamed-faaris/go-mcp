@@ -44,12 +44,7 @@ func (r *Runtime) Create(ctx context.Context, spec managed.Spec) (managed.Info,e
 
 func (r *Runtime) Start(ctx context.Context,id string) error { return r.client.StartContainer(ctx,id) }
 func (r *Runtime) Stop(ctx context.Context,id string,timeout time.Duration) error {
-	if timeout>0 {
-		var cancel context.CancelFunc
-		ctx,cancel=context.WithTimeout(ctx,timeout+5*time.Second)
-		defer cancel()
-	}
-	return r.client.StopContainer(ctx,id)
+	return r.client.StopContainerWithTimeout(ctx,id,timeout)
 }
 func (r *Runtime) Delete(ctx context.Context,id string) error { return r.client.RemoveContainer(ctx,id) }
 
