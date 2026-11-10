@@ -335,10 +335,28 @@ func (c *Client) StartContainer(ctx context.Context, idOrName string) error {
 	return nil
 }
 
-// StopContainer stops a running container.
+// StopContainer stops a running container with Podman's default timeout.
 func (c *Client) StopContainer(ctx context.Context, idOrName string) error {
-	u := fmt.Sprintf("%s/containers/%s/stop", c.baseURL, url.PathEscape(idOrName))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
+	return c.StopContainerWithTimeout(ctx, idOrName, 10*time.Second)
+}
+
+// StopContainerWithTimeout stops a container and asks Podman to wait at most
+// timeout before sending SIGKILL. A non-positive timeout uses Podman's default.
+func (c *Client) StopContainerWithTimeout(ctx context.Context, idOrName string, timeout time.Duration) error {
+	u, err := url.Parse(fmt.Sprintf("%s/containers/%s/stop", c.baseURL, url.PathEscape(idOrName)))
+	if err != nil {
+		return err
+	}
+	if timeout > 0 {
+		seconds := int64((timeout + time.Second - 1) / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		query := u.Query()
+		query.Set("t", strconv.FormatInt(seconds, 10))
+		u.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
 	if err != nil {
 		return err
 	}
