@@ -7,7 +7,7 @@
       "args": ["${PLUGIN_ROOT}/server/index.mjs"],
       "cwd": "${PLUGIN_ROOT}",
       "env": {
-        "BROWSER_BRIDGE_TOKEN": "${BROWSER_BRIDGE_TOKEN}",
+        "BROWSER_BRIDGE_TOKEN": "REPLACE_WITH_GENERATED_RANDOM_TOKEN",
         "BROWSER_BRIDGE_PORT": "8765"
       }
     }
