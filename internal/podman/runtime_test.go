@@ -88,3 +88,36 @@ func TestCreateContainerOverwritesReservedIdentityLabels(t *testing.T) {
 	labels:=payload["labels"].(map[string]interface{})
 	if labels["gomcp.managed"]!="true"||labels["gomcp.owner_id"]!="trusted-owner"||labels["gomcp.task_id"]!="trusted-task"||labels["gomcp.project_id"]!="trusted-project"{t.Fatalf("reserved labels were not manager-controlled: %#v",labels)}
 }
+
+func TestCreateContainerDropsCallerGomcpNamespaceAndCopiesEnv(t *testing.T) {
+	var payload map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"Id":"container-3"}`))
+	}))
+	defer server.Close()
+
+	client := &Client{httpClient: server.Client(), baseURL: server.URL + "/v4.0.0/libpod"}
+	env := make([]string, 1, 8)
+	env[0] = "CUSTOM=value"
+	_, err := client.CreateContainer(context.Background(), CreateContainerOpts{
+		Name: "test", Image: "node:22", OwnerID: "trusted-owner", TaskID: "trusted-task",
+		ProjectID: "trusted-project", PresetID: "node-pnpm", Env: env,
+		Labels: map[string]string{
+			"gomcp.managed": "false",
+			"gomcp.future_security_flag": "forged",
+			"team": "engineering",
+		},
+	})
+	if err != nil { t.Fatal(err) }
+	labels := payload["labels"].(map[string]interface{})
+	if labels["gomcp.managed"] != "true" { t.Fatalf("manager managed label missing: %#v", labels) }
+	if _, exists := labels["gomcp.future_security_flag"]; exists {
+		t.Fatalf("caller controlled gomcp namespace must be dropped: %#v", labels)
+	}
+	if labels["team"] != "engineering" { t.Fatalf("non-reserved labels should be retained: %#v", labels) }
+	if len(env) < 2 || env[1] != "" {
+		t.Fatalf("CreateContainer mutated caller-owned env backing array: %#v", env)
+	}
+}
