@@ -146,3 +146,39 @@ cd ..
 # Run server locally
 ./go-mcp-server --config config/web_config.yaml
 ```
+
+
+---
+
+## 6. Local Chrome Browser Control (Optional)
+
+The `browser-control/` directory adds a separate Node.js MCP server and Chrome Manifest V3 extension. It intentionally does not replace the existing Go MCP client, Podman server, or React dashboard.
+
+### Architecture
+
+- MCP server: `browser-control/server/index.mjs` using `@modelcontextprotocol/server` v2 and stdio transport.
+- Local bridge: authenticated WebSocket bound only to `127.0.0.1:8765`.
+- Extension: `browser-control/extension/`, with a Manifest V3 service worker.
+- MCP host starts the Node server; the extension connects outbound to its loopback WebSocket endpoint.
+- Authentication uses the same random `BROWSER_BRIDGE_TOKEN` in the server environment and extension options.
+
+### WebMCP-first behavior
+
+- `browser_list_page_tools` injects a MAIN-world function into the selected tab and checks `document.modelContext`.
+- It discovers page tools and their JSON schemas, including tools from frames when Chrome exposes them through WebMCP permissions.
+- Each discovered page tool is registered as a separate dynamic `webmcp_*` MCP tool. The SDK emits tool-list change notifications when the registrations change.
+- If no WebMCP tools exist, the stable generic browser tools remain available and operate through Chrome tabs/scripting APIs.
+- The generic `browser_execute_page_tool` remains available for MCP clients whose tool-list cache does not refresh dynamically.
+
+### Setup
+
+See `browser-control/README.md`. For the existing Go agent, use `config/mcp_servers.browser.json`, set `BROWSER_BRIDGE_TOKEN`, and set `MCP_CONFIG_PATH=./config/mcp_servers.browser.json`. This config is opt-in and does not alter the default MCP server list.
+
+### Security and limitations
+
+- Never bind the bridge to a non-loopback interface or expose port 8765 publicly.
+- The extension has broad page permissions because it controls arbitrary tabs. Users must load it unpacked and configure the shared token.
+- WebMCP remains experimental and is feature-detected. Normal DOM fallback works when WebMCP is absent.
+- DOM events are synthetic, not physical keyboard/mouse input. Browser-level shortcuts are not supported by `browser_press_key`.
+- Screenshot capture is limited to the active visible tab.
+- The MCP host should require approval for consequential actions such as sending messages, submitting forms, purchases, and closing tabs.
