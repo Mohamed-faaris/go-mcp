@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "go-mcp Browser Bridge",
+  "version": "0.1.0",
+  "description": "Connects Chrome tabs to the go-mcp browser-control MCP server. WebMCP-first with DOM fallback.",
+  "permissions": ["tabs", "scripting", "storage", "activeTab"],
+  "host_permissions": ["http://127.0.0.1:8765/*", "http://localhost:8765/*", "<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "go-mcp Browser Bridge", "default_popup": "popup.html" },
+  "options_page": "options.html"
+}
