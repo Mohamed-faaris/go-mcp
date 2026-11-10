@@ -81,6 +81,17 @@ Tools are discovered at runtime from MCP servers defined in `config/mcp_servers.
 
 The agent prefers structured browser tools (Playwright) and falls back to screenshot-based GUI control when needed.
 
+## Existing Chrome Browser Control
+
+The optional `browser-control/` package connects the existing Chrome session to an MCP client through a local Chrome extension.
+
+- WebMCP-first: discover and execute tools registered by the active website.
+- Fallback: normal tab navigation, page text extraction, DOM click/type, and viewport capture.
+- The extension connects to a loopback-only WebSocket bridge authenticated by a shared random token.
+- It is opt-in and does not change the default MCP server configuration.
+
+See [browser-control/README.md](browser-control/README.md) for installation and [config/mcp_servers.browser.json](config/mcp_servers.browser.json) for the Go agent configuration. Set `BROWSER_BRIDGE_TOKEN` and `MCP_CONFIG_PATH=./config/mcp_servers.browser.json` before starting the agent.
+
 ## Approval modes
 
 | Mode | Behavior |
