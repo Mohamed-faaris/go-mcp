@@ -48,7 +48,7 @@ func New(cfg *webconfig.Config,pc *podman.Client,log *logger.Logger)*Server{
   base,key,model:=os.Getenv("OPENAI_BASE_URL"),os.Getenv("OPENAI_API_KEY"),os.Getenv("OPENAI_MODEL")
   if base!=""&&key!=""&&model!=""{
     timeout:=90;if v,e:=strconv.Atoi(os.Getenv("REQUEST_TIMEOUT_SECONDS"));e==nil&&v>0{timeout=v}
-    s.agentRunner=worker.New(llm.NewClient(base,key,model,timeout,log),pc,log)
+    s.agentRunner=worker.New(llm.NewClient(base,key,model,timeout,log),pc,log);s.agentRunner.SetToolPolicies(s.toolPolicies)
   }
   if broker,err:=credentials.NewGitHubAppBrokerFromEnv();err==nil{s.githubApp=broker}
   s.registerRoutes()
