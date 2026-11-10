@@ -80,6 +80,7 @@ Then run the agent normally. The existing Go MCP registry launches this Node ser
 | `browser_status` | Check extension connection |
 | `browser_list_tabs` | List Chrome tabs |
 | `browser_get_active_tab` | Inspect active tab |
+| `browser_activate_tab` | Activate/focus a tab by ID |
 | `browser_create_tab` | Create a tab |
 | `browser_close_tab` | Close a tab |
 | `browser_navigate` | Navigate to HTTP(S) URL |
