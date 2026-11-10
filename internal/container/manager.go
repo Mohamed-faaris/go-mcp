@@ -146,6 +146,71 @@ func (m *Manager) InspectOwned(ctx context.Context, ownerID, taskID, containerID
 	return observed, nil
 }
 
+func (m *Manager) StartOwned(ctx context.Context, ownerID, taskID, containerID string) error {
+	record, err := m.ownedRecord(ctx, ownerID, taskID, containerID)
+	if err != nil {
+		return err
+	}
+	observed, err := m.runtime.Inspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	if !sameIdentity(record, observed) {
+		return errors.New("container manager: runtime identity mismatch; refusing start")
+	}
+	if strings.EqualFold(observed.State, "running") {
+		return nil
+	}
+	if err := m.runtime.Start(ctx, containerID); err != nil {
+		return fmt.Errorf("container manager: start owned container: %w", err)
+	}
+	updated, err := m.runtime.Inspect(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("container manager: inspect after start: %w", err)
+	}
+	if !sameIdentity(record, updated) {
+		return errors.New("container manager: runtime identity changed after start")
+	}
+	if err := m.registry.Put(ctx, updated); err != nil {
+		return fmt.Errorf("container manager: persist started state: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) StopOwned(ctx context.Context, ownerID, taskID, containerID string, timeout time.Duration) error {
+	record, err := m.ownedRecord(ctx, ownerID, taskID, containerID)
+	if err != nil {
+		return err
+	}
+	observed, err := m.runtime.Inspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	if !sameIdentity(record, observed) {
+		return errors.New("container manager: runtime identity mismatch; refusing stop")
+	}
+	if !strings.EqualFold(observed.State, "running") {
+		return nil
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if err := m.runtime.Stop(ctx, containerID, timeout); err != nil {
+		return fmt.Errorf("container manager: stop owned container: %w", err)
+	}
+	updated, err := m.runtime.Inspect(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("container manager: inspect after stop: %w", err)
+	}
+	if !sameIdentity(record, updated) {
+		return errors.New("container manager: runtime identity changed after stop")
+	}
+	if err := m.registry.Put(ctx, updated); err != nil {
+		return fmt.Errorf("container manager: persist stopped state: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) DeleteOwned(ctx context.Context, ownerID, taskID, containerID string) error {
 	record, err := m.ownedRecord(ctx, ownerID, taskID, containerID)
 	if err != nil { return err }
