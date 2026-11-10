@@ -1,6 +1,7 @@
 package podman
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func TestRuntimeCreateAppliesTaskIsolationAndOwnershipLabels(t *testing.T) {
 
 	client:=&Client{httpClient:server.Client(),pullClient:server.Client(),baseURL:server.URL+"/v4.0.0/libpod"}
 	runtime,err:=NewRuntime(client);if err!=nil{t.Fatal(err)}
-	info,err:=runtime.Create(t.Context(),managed.Spec{
+	info,err:=runtime.Create(context.Background(),managed.Spec{
 		Name:"gomcp-task-1",Image:"node:22",Workspace:"/srv/gomcp/workspaces/task-1",
 		OwnerID:"user-1",TaskID:"task-1",ProjectID:"project-1",PresetID:"node-pnpm",
 		Environment:map[string]string{"CI":"true"},Network:"gomcp-agent-egress",
@@ -65,7 +66,7 @@ func TestListContainersDoesNotTrustNamePrefix(t *testing.T) {
 	}))
 	defer server.Close()
 	client:=&Client{httpClient:server.Client(),baseURL:server.URL+"/v4.0.0/libpod"}
-	items,err:=client.ListContainers(t.Context());if err!=nil{t.Fatal(err)}
+	items,err:=client.ListContainers(context.Background());if err!=nil{t.Fatal(err)}
 	if len(items)!=1||items[0].ID!="managed"{t.Fatalf("name prefix incorrectly treated as managed: %#v",items)}
 }
 
@@ -78,7 +79,7 @@ func TestCreateContainerOverwritesReservedIdentityLabels(t *testing.T) {
 	}))
 	defer server.Close()
 	client:=&Client{httpClient:server.Client(),baseURL:server.URL+"/v4.0.0/libpod"}
-	_,err:=client.CreateContainer(t.Context(),CreateContainerOpts{
+	_,err:=client.CreateContainer(context.Background(),CreateContainerOpts{
 		Name:"test",Image:"node:22",OwnerID:"trusted-owner",TaskID:"trusted-task",
 		ProjectID:"trusted-project",PresetID:"node-pnpm",
 		Labels:map[string]string{"gomcp.owner_id":"attacker","gomcp.task_id":"attacker","gomcp.managed":"false"},
