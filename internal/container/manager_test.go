@@ -57,3 +57,29 @@ func TestDeleteVerifiesRuntimeLabelsBeforeDelete(t *testing.T){m,rt,ws:=testMana
 func TestDeleteStopsRunningOwnedContainer(t *testing.T){m,rt,ws:=testManager(t);info,err:=m.CreateTaskContainer(context.Background(),testRequest(ws));if err!=nil{t.Fatal(err)};observed:=rt.items[info.ID];observed.State="running";rt.items[info.ID]=observed;if err:=m.DeleteOwned(context.Background(),"user-1","task-1",info.ID);err!=nil{t.Fatal(err)};if len(rt.stopped)!=1||len(rt.deleted)!=1{t.Fatalf("expected stop and delete, stopped=%v deleted=%v",rt.stopped,rt.deleted)}}
 func TestStartStopAreOwnershipChecked(t *testing.T){m,rt,ws:=testManager(t);info,err:=m.CreateTaskContainer(context.Background(),testRequest(ws));if err!=nil{t.Fatal(err)};if err:=m.StartOwned(context.Background(),"user-1","task-1",info.ID);err!=nil{t.Fatal(err)};if err:=m.StopOwned(context.Background(),"user-1","task-1",info.ID,time.Second);err!=nil{t.Fatal(err)};if len(rt.started)!=1||len(rt.stopped)!=1{t.Fatalf("expected start+stop: %#v",rt)}}
 func TestFileRegistryPersistsOwnershipWithPrivatePermissions(t *testing.T){path:=filepath.Join(t.TempDir(),"nested","registry.json");r,err:=NewFileRegistry(path);if err!=nil{t.Fatal(err)};info:=Info{ID:"runtime-1",OwnerID:"user-1",TaskID:"task-1"};if err:=r.Put(context.Background(),info);err!=nil{t.Fatal(err)};loaded,err:=NewFileRegistry(path);if err!=nil{t.Fatal(err)};got,err:=loaded.Get(context.Background(),"runtime-1");if err!=nil{t.Fatal(err)};if got.OwnerID!="user-1"{t.Fatalf("owner not persisted: %#v",got)};st,err:=os.Stat(path);if err!=nil{t.Fatal(err)};if st.Mode().Perm()!=0o600{t.Fatalf("expected 0600 registry, got %o",st.Mode().Perm())}}
+
+
+func TestNewManagerRejectsMissingWorkspaceRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "registry.json")
+	reg, err := NewFileRegistry(root)
+	if err != nil { t.Fatal(err) }
+	if _, err := NewManager(newFakeRuntime(), reg, ManagerOptions{
+		WorkspaceRoot: "",
+		AllowedImages: []string{"node:22"},
+	}); err == nil {
+		t.Fatal("expected an empty workspace root to be rejected")
+	}
+}
+
+func TestNewManagerRejectsWorkspaceRootThatIsAFile(t *testing.T) {
+	rootFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(rootFile, []byte("x"), 0o600); err != nil { t.Fatal(err) }
+	reg, err := NewFileRegistry(filepath.Join(t.TempDir(), "registry.json"))
+	if err != nil { t.Fatal(err) }
+	if _, err := NewManager(newFakeRuntime(), reg, ManagerOptions{
+		WorkspaceRoot: rootFile,
+		AllowedImages: []string{"node:22"},
+	}); err == nil {
+		t.Fatal("expected a non-directory workspace root to be rejected")
+	}
+}
