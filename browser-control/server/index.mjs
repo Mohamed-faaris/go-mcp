@@ -38,8 +38,10 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
 httpServer.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   const remote = req.socket.remoteAddress;
+  const origin = req.headers.origin || '';
   const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
-  if (url.pathname !== '/bridge' || !isLoopback || !safeEqual(url.searchParams.get('token') || '', TOKEN)) {
+  const isChromeExtension = origin.startsWith('chrome-extension://');
+  if (url.pathname !== '/bridge' || !isLoopback || !isChromeExtension || !safeEqual(url.searchParams.get('token') || '', TOKEN)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
     socket.destroy();
     return;
