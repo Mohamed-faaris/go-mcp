@@ -217,8 +217,50 @@ func(s *Server) reviewApproval(w http.ResponseWriter,r *http.Request,status stri
   if s.toolPolicies==nil{s.jsonError(w,"approval store unavailable",503);return}
   a,err:=s.toolPolicies.ReviewApproval(r.PathValue("id"),getUserName(r.Context()),status);if err!=nil{s.jsonError(w,err.Error(),409);return};s.jsonOK(w,map[string]interface{}{"approval":a})
 }
-func(s *Server) handleApprove(w http.ResponseWriter,r *http.Request){s.reviewApproval(w,r,"approved")}
+func(s *Server) handleApprove(w http.ResponseWriter,r *http.Request){
+  if s.toolPolicies==nil{s.jsonError(w,"approval service unavailable",503);return}
+  approval,err:=s.toolPolicies.ReviewApproval(r.PathValue("id"),getUserName(r.Context()),"approved")
+  if err!=nil{s.jsonError(w,err.Error(),409);return}
+  if err=s.executeApprovedAction(r.Context(),approval);err!=nil{
+    _=s.toolPolicies.SetApprovalResult(approval.ID,"failed")
+    s.jsonError(w,err.Error(),502)
+    return
+  }
+  _=s.toolPolicies.SetApprovalResult(approval.ID,"executed")
+  s.jsonOK(w,map[string]interface{}{"approval":approval,"result":"executed"})
+}
 func(s *Server) handleDeny(w http.ResponseWriter,r *http.Request){s.reviewApproval(w,r,"denied")}
+
+func(s *Server) executeApprovedAction(ctx context.Context,a tools.Approval)error{
+  switch a.ToolID{
+  case "container.delete.other":
+    if a.ResourceType!="container"||a.ResourceID==""||s.tasks==nil{return fmt.Errorf("invalid container deletion approval")}
+    requester,ok:=s.tasks.Get(a.TaskID);if !ok||requester.OwnerID!=a.RequestedBy{return fmt.Errorf("requesting task is no longer valid")}
+    if requester.ContainerID==a.ResourceID{return fmt.Errorf("agent cannot use cross-container approval to delete its own task container")}
+    inspect,err:=s.podman.InspectContainer(ctx,a.ResourceID);if err!=nil{return fmt.Errorf("approved container no longer exists: %w",err)}
+    labels:=inspect.Config.Labels
+    if labels["gomcp.managed"]!="true"||labels["gomcp.protected"]=="true"{return fmt.Errorf("target is not an eligible managed container")}
+    targetTaskID:=labels["gomcp.task_id"]
+    target,ok:=s.tasks.Get(targetTaskID)
+    if !ok||target.ContainerID!=inspect.ID||target.ID==requester.ID{return fmt.Errorf("target container is not registered to a different managed task")}
+    if err:=s.podman.RemoveContainer(ctx,inspect.ID);err!=nil{return fmt.Errorf("approved container deletion failed: %w",err)}
+    return nil
+  case "git.push":
+    if a.ResourceType!="task"||a.ResourceID==""||s.tasks==nil{return fmt.Errorf("invalid Git push approval")}
+    item,ok:=s.tasks.Get(a.ResourceID);if !ok||item.ID!=a.TaskID||item.OwnerID!=a.RequestedBy{return fmt.Errorf("approved task is no longer valid")}
+    if item.Status!=task.StatusCompleted||item.WorkspacePath==""||item.BranchName==""{return fmt.Errorf("task must be completed with a workspace and branch before pushing")}
+    if s.githubApp==nil{return fmt.Errorf("GitHub App broker is not configured on the host")}
+    remotes,err:=gitops.ReadRemotes(ctx,item.WorkspacePath);if err!=nil{return fmt.Errorf("inspect task Git remote: %w",err)}
+    for _,remote:=range remotes{
+      if remote.Name!="origin"{continue}
+      if err:=gitops.ValidateGitHubRemote(remote);err!=nil{return err}
+      return gitops.PushWithGitHubApp(ctx,item.WorkspacePath,remote.Owner,remote.Repository,item.BranchName,s.githubApp)
+    }
+    return fmt.Errorf("task repository has no GitHub origin remote")
+  default:
+    return fmt.Errorf("no manager-side executor is registered for approved tool %q",a.ToolID)
+  }
+}
 
 // Agent session and context APIs.
 func(s *Server) handleRegisterAgent(w http.ResponseWriter,r *http.Request){
