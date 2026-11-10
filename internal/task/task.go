@@ -24,6 +24,7 @@ var ErrInvalidTransition = errors.New("task: invalid status transition")
 
 type Task struct {
   ID string `json:"id"`
+  KeepContainer bool `json:"keepContainer"`
   OwnerID string `json:"ownerId"`
   ProjectID string `json:"projectId"`
   ProjectPath string `json:"projectPath"`
