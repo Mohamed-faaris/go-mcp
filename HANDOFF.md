@@ -1,70 +1,63 @@
 # go-mcp — Container-Native Agent Rework Handoff
 
+## Source of truth
+
+The repository is the specification and implementation source of truth. All agents must read `AGENTS.md`, `REWORK_PLAN.md`, `ARCHITECTURE.md`, `docs/agents/COORDINATION.md`, and `docs/agents/WORKSTREAMS.md` before coding.
+
+Use `docs/agents/WEB_AGENT_BOOTSTRAP.md` to start another web agent or new chat. The coordination service is planned; until implemented, Git branches, PRs, and files under `docs/agents/handoffs/` are the durable communication/handoff mechanism. Do not claim live messaging/session resume exists before it is implemented.
+
 ## Product direction
 
-Rework this repository into a container-native autonomous software engineering platform. Read `ARCHITECTURE.md` before implementation. The target is not a general Ubuntu desktop-control agent. The target is an agent that works on a checked-out project inside an isolated task container, runs checks, commits changes, and produces a report.
+Rework this repository into a container-native autonomous software engineering platform. The target agent works on a checked-out project in an isolated task container, runs checks, creates commits, and produces a report. It is not primarily a desktop-control agent.
 
 ## Existing foundations to retain
 
-- Go backend and existing Podman client.
+- Go backend and Podman client, subject to security hardening.
 - Existing container lifecycle and image management where correct.
-- React + TypeScript + Vite dashboard.
+- React + TypeScript + Vite dashboard, redesigned around tasks.
 - OpenAI-compatible LLM client and agent loop where reusable.
-- Structured logging and MCP adapter where useful.
+- MCP adapter as an optional integration, not the core filesystem/terminal interface.
 
-Do not preserve unsafe behavior merely for compatibility. Audit all existing routes and lifecycle code before exposing them to agents.
+## Required capabilities
 
-## Required architecture
+- Runtime presets: Node.js + pnpm, Bun, Python + uv, Node.js + npm, Go, Ubuntu Base.
+- Repository detection and task workspaces.
+- Existing Git remote detection. GitHub remotes use host-brokered, temporary repository-scoped GitHub App tokens. Local-only repositories continue to work without remote credentials.
+- Container-owned tools for files, shell, processes, search, Git, tests, builds, and reports.
+- UI-configurable tool policies: automatic, approval required, disabled.
+- One-time approvals for permitted high-impact operations. Deleting another managed task's container requires manager-mediated approval. Unmanaged/host containers and host escape operations remain hard-denied.
+- Persistent agent sessions, project/task messaging, work claims, path leases, and versioned context snapshots so a new web agent/chat can resume work.
+- Task-first React/shadcn UI, monochrome black-and-white theme, advanced settings in collapsibles/dialogs.
+- Authenticated API ingress through Cloudflare Tunnel. Only the control plane is publicly reachable.
 
-- The go-mcp-server process is the trusted control plane and the only component allowed to access the Podman socket.
-- Each task receives a unique workspace and isolated workload container.
-- The project is cloned into the workspace; do not mount the developer's live working tree read-write by default.
-- Agent tools operate only inside the assigned workspace/container.
-- Agent-created containers are registered with owner/task metadata. An agent can inspect or delete only containers owned by its task identity.
-- Global cleanup remains a manager-only operation.
-- The agent can run shell commands, manage processes, edit/search files, use Git, run tests/builds, and collect artifacts.
-- The agent commits successful work to a task branch and returns a structured report.
-- Cloudflare Tunnel routes HTTPS to the authenticated control plane only. Never expose Podman API or raw container ports publicly.
+## Security constraints
 
-## Security requirements
-
-"Full access" means broad development access inside the workload container, not host access. Do not mount the Podman socket into workload containers. Do not use privileged containers, host namespaces, or host devices by default. Enforce CPU, memory, PID, disk, and wall-clock limits. Restrict filesystem paths to the task workspace. Use task-scoped, short-lived Git credentials. Verify ownership from the manager registry, not container name prefixes or caller-supplied labels alone.
-
-Replace default production credentials and base64 localStorage auth with secure authentication and per-resource authorization before public deployment.
+The control plane alone accesses the Podman socket. Workload agents have broad development access inside their assigned container only. Never expose host root, the Podman socket, or another task's workspace. Do not pass permanent credentials into a workload. Verify ownership from the manager registry rather than container names.
 
 ## Required task lifecycle
 
-1. Authenticate and authorize the caller.
-2. Create a task record and enqueue it.
-3. Clone the repository into a unique workspace; record base commit and task branch.
-4. Provision a resource-limited workload container with immutable owner/task labels.
-5. Run the agent with task-scoped tools and cancellation support.
-6. Capture logs, process exit codes, changed files, Git diff, and artifacts.
-7. Run applicable format/lint/typecheck/build/test commands.
-8. Review the diff and commit changes on the task branch.
-9. Generate a report with passed/failed/skipped/not-run checks.
-10. Stop and clean up the container according to retention policy.
+1. Authenticate/authorize.
+2. Create and queue task.
+3. Clone or snapshot project and record base commit.
+4. Select runtime preset and provision isolated container.
+5. Issue scoped task tools and repository credentials if needed.
+6. Run agent with cancellation, event streaming, and bounded resource/time limits.
+7. Run applicable formatting/lint/typecheck/build/test commands.
+8. Review diff, commit changes, and push only with allowed credentials/policy.
+9. Generate structured report.
+10. Clean up container/credentials according to policy.
 
-## Implementation order
+## Multi-agent implementation
 
-1. Add a container runtime interface and harden Podman ownership/lifecycle behavior.
-2. Add task models, task state machine, scheduler, cancellation, and durable registry.
-3. Add safe project workspace cloning and task-scoped agent tool execution.
-4. Add Git branch/commit and test/build orchestration.
-5. Add structured reports, task events, and dashboard task views.
-6. Add authenticated versioned API and Cloudflare Tunnel deployment configuration.
-7. Add unit/integration tests for path traversal, authorization, ownership, cancellation, cleanup, and task transitions.
+Parallel workstreams are defined in `docs/agents/WORKSTREAMS.md`. Each agent owns separate paths and a separate branch. Shared contracts live in `docs/contracts/`. The integration coordinator owns cross-workstream merges and full acceptance. Every chat/session handoff records branch, base/latest commit, changed paths, checks, blockers, and next actions.
 
-## Acceptance criteria
+## Completion criteria
 
-- Agent cannot access host root, Podman socket, another task's workspace, or another task's container.
-- Agent cannot delete containers outside its ownership scope.
-- Task can clone, edit, test, commit, and report.
-- Failed checks remain visible in the report.
-- Cancellation kills child processes and cleans up predictably.
-- Public ingress reaches only authenticated control-plane routes.
-- Tests cover the security boundary and lifecycle failure cases.
-
-## Current repository notes
-
-The current repository already has a Podman client, a container dashboard, and a separate agent loop that uses configured MCP servers. The rework must integrate these into one task lifecycle. Do not add a second independent container manager or leave the old desktop-agent path as the default execution route.
+- Tasks can run in the selected runtime presets.
+- Existing Git remotes are handled safely with scoped host-managed credentials.
+- Agent tools are scoped to the current task and enforced server-side.
+- Approval-required tools pause until explicit one-time authorization.
+- Multi-agent messages and context snapshots persist across chats once the coordination service is implemented.
+- Another agent can resume from a committed handoff and current repository state even before the live coordination service exists.
+- Dashboard is monochrome, task-first, and hides advanced settings behind collapsibles/dialogs.
+- Reports distinguish passed, failed, skipped, and not-run checks.
