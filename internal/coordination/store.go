@@ -14,6 +14,7 @@ import (
 
 type Session struct {
   ID string `json:"id"`
+  OwnerID string `json:"ownerId"`
   ProjectID string `json:"projectId"`
   TaskID string `json:"taskId,omitempty"`
   WorkstreamID string `json:"workstreamId,omitempty"`
@@ -128,3 +129,13 @@ func(s *Store)AcquireLease(project,session,resource,kind string,ttl time.Duratio
   v:=Lease{ID:id(),ProjectID:project,SessionID:session,Resource:resource,Kind:kind,CreatedAt:now,ExpiresAt:now.Add(ttl)};s.data.Leases[v.ID]=v;if e:=s.saveLocked();e!=nil{return Lease{},e};return v,nil
 }
 func(s *Store)ReleaseLease(id,session string)error{s.mu.Lock();defer s.mu.Unlock();v,ok:=s.data.Leases[id];if !ok{return nil};if v.SessionID!=session{return errors.New("lease owner mismatch")};delete(s.data.Leases,id);return s.saveLocked()}
+
+func (s *Store) RegisterOwned(owner,project,task,workstream,label,branch,commit string)(Session,error){
+  if owner==""||project==""||label==""{return Session{},errors.New("owner, projectId and agentLabel are required")}
+  s.mu.Lock();defer s.mu.Unlock()
+  now:=time.Now().UTC()
+  v:=Session{ID:id(),OwnerID:owner,ProjectID:project,TaskID:task,WorkstreamID:workstream,AgentLabel:label,Branch:branch,Commit:commit,Status:"active",CreatedAt:now,LastHeartbeatAt:now}
+  s.data.Sessions[v.ID]=v
+  if e:=s.saveLocked();e!=nil{return Session{},e}
+  return v,nil
+}
