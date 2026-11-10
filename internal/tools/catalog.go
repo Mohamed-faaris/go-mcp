@@ -98,3 +98,9 @@ func(s *Store) ReviewApproval(id,reviewer,status string)(Approval,error){
   if status!="approved"&&status!="denied"{return Approval{},errors.New("invalid approval decision")}
   s.mu.Lock();defer s.mu.Unlock();a,ok:=s.data.Approvals[id];if !ok{return Approval{},os.ErrNotExist};if a.Status!="pending"{return Approval{},errors.New("approval is no longer pending")};now:=time.Now().UTC();if now.After(a.ExpiresAt){a.Status="expired";s.data.Approvals[id]=a;_=s.saveLocked();return a,errors.New("approval expired")};a.Status=status;a.ReviewedBy=reviewer;a.ReviewedAt=&now;s.data.Approvals[id]=a;if e:=s.saveLocked();e!=nil{return Approval{},e};return a,nil
 }
+
+func(s *Store) GetApproval(id string)(Approval,bool){s.mu.RLock();defer s.mu.RUnlock();a,ok:=s.data.Approvals[id];return a,ok}
+func(s *Store) SetApprovalResult(id,status string)error{
+  if status!="executed"&&status!="failed"{return errors.New("invalid approval result status")}
+  s.mu.Lock();defer s.mu.Unlock();a,ok:=s.data.Approvals[id];if !ok{return os.ErrNotExist};if a.Status!="approved"{return errors.New("approval is not approved")};a.Status=status;now:=time.Now().UTC();a.ReviewedAt=&now;s.data.Approvals[id]=a;return s.saveLocked()
+}
