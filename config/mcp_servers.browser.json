@@ -1,0 +1,10 @@
+{
+  "servers": [
+    {
+      "name": "browser-control",
+      "command": "node",
+      "args": ["./browser-control/server/index.mjs"],
+      "description": "Controls the connected local Chrome browser. Uses page WebMCP tools when available and falls back to normal DOM interaction."
+    }
+  ]
+}
