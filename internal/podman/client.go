@@ -237,31 +237,27 @@ func (c *Client) CreateContainer(ctx context.Context, opts CreateContainerOpts) 
 		}
 	}
 
+	resourceLimits := map[string]interface{}{
+		"memory": map[string]interface{}{"limit": memBytes},
+		"cpu": map[string]interface{}{"quota": cpuQuota, "period": cpuPeriod},
+	}
+	if opts.PidsLimit > 0 {
+		resourceLimits["pids"] = map[string]interface{}{"limit": opts.PidsLimit}
+	}
 	payload := map[string]interface{}{
-		"name":            name,
-		"image":           opts.Image,
-		"command":         []string{"/bin/sh", "-c", "while true; do sleep 3600; done"},
-		"terminal":        true,
-		"stdin":           true,
-		"labels":          labels,
-		"mounts":          mounts,
-		"env":             env,
-		"work_dir":               "/workspace",
-		"read_only_filesystem":    opts.ReadOnlyRootfs,
-		"no_new_privileges":       opts.NoNewPrivileges,
-		"read_write_tmpfs":        true,
-		"resource_limits": map[string]interface{}{
-			"memory": map[string]interface{}{
-				"limit": memBytes,
-			},
-			"cpu": map[string]interface{}{
-				"quota":  cpuQuota,
-				"period": cpuPeriod,
-			},
-			"pids": map[string]interface{}{
-				"limit": opts.PidsLimit,
-			},
-		},
+		"name": name,
+		"image": opts.Image,
+		"command": []string{"/bin/sh", "-c", "while true; do sleep 3600; done"},
+		"terminal": true,
+		"stdin": true,
+		"labels": labels,
+		"mounts": mounts,
+		"env": env,
+		"work_dir": "/workspace",
+		"read_only_filesystem": opts.ReadOnlyRootfs,
+		"no_new_privileges": opts.NoNewPrivileges,
+		"read_write_tmpfs": true,
+		"resource_limits": resourceLimits,
 	}
 
 	if len(opts.DropCapabilities) > 0 {
